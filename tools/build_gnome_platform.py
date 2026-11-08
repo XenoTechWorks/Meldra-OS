@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -139,16 +140,116 @@ def autotools_data_build(pkg: Package, lock: dict, cache: Path, work: Path, outp
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
+def nspr_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    build_dir, stage = unit / "build", unit / "package/root"
+    build_dir.mkdir()
+    env = os.environ.copy()
+    env.update({"CC": f"gcc --sysroot={root}", "CFLAGS": "-O2 -pipe", "HOST_CC": "gcc"})
+    subprocess.run([str(upstream / "nspr/configure"), "--prefix=/usr", "--libdir=/usr/lib",
+                    "--enable-64bit", "--disable-debug", "--enable-optimize", "--with-mozilla=no"],
+                   cwd=build_dir, env=env, check=True)
+    subprocess.run(["make"], cwd=build_dir, env=env, check=True)
+    subprocess.run(["make", "install", f"DESTDIR={stage}"], cwd=build_dir, env=env, check=True)
+    library = next((stage / "usr/lib").glob("libnspr4.so"), None)
+    if library is None:
+        raise RuntimeError("libnspr4 not installed")
+    require_glibc_elf(library)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def nss_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    nss = upstream / "nss"
+    # nsinstall runs during the build, so it must be a host binary (the target loader is not the host's).
+    host_nsinstall = unit / "nsinstall"
+    subprocess.run(["gcc", "-O2", "-o", str(host_nsinstall), str(nss / "coreconf/nsinstall/nsinstall.c"),
+                    str(nss / "coreconf/nsinstall/pathsub.c")], check=True)
+    common = [
+        "BUILD_OPT=1", "USE_64=1", "NSS_DISABLE_GTESTS=1", "NSS_ENABLE_WERROR=0", "NSS_USE_SYSTEM_SQLITE=1",
+        "NSS_DISABLE_DBM=1", f"NSPR_INCLUDE_DIR={root}/usr/include/nspr", f"NSPR_LIB_DIR={root}/usr/lib",
+        f"CC=gcc --sysroot={root}", f"CCC=g++ --sysroot={root}", f"NSINSTALL={host_nsinstall}",
+        f"LDFLAGS=-Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
+    ]
+    # `nss_build_all` would also build a bundled NSPR; the NSPR package is already in the sysroot.
+    subprocess.run(["make", "all", *common], cwd=nss, check=True)
+    subprocess.run(["make", "latest", *common], cwd=nss, check=True)
+    dist = next(d for d in (upstream / "dist").iterdir() if d.name.endswith("_OPT.OBJ"))
+    lib, inc, pc = stage / "usr/lib", stage / "usr/include/nss", stage / "usr/lib/pkgconfig"
+    for directory in (lib, inc, pc):
+        directory.mkdir(parents=True)
+    for so in dist.joinpath("lib").glob("*.so"):
+        (lib / so.name).write_bytes(so.read_bytes())
+        (lib / so.name).chmod(0o755)
+    for header in (upstream / "dist/public/nss").glob("*.h"):
+        (inc / header.name).write_bytes(header.read_bytes())
+    version = lock["version"]
+    template = (nss / "pkg/pkg-config/nss.pc.in").read_text()
+    for key, value in (("%prefix%", "/usr"), ("%exec_prefix%", "/usr"), ("%libdir%", "/usr/lib"),
+                       ("%includedir%", "/usr/include/nss"), ("%NSS_VERSION%", version),
+                       ("%NSPR_VERSION%", "4.40"), ("%NSS_VERSION%", version)):
+        template = template.replace(key, value)
+    (pc / "nss.pc").write_text(template)
+    library = lib / "libnss3.so"
+    if not library.is_file():
+        raise RuntimeError("libnss3 not installed")
+    require_glibc_elf(library)
+    build(manifest(stage, pkg.name, version, pkg.deps), output / f"{pkg.name}-{version}.kiln")
+
+
+def icu_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """ICU runs its own data tools while building, so a native build comes first (--with-cross-build)."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    configure = upstream / "source/configure"
+    common = ["--disable-tests", "--disable-samples", "--disable-extras", "--disable-static",
+              "--enable-shared", "--disable-layoutex"]
+    native = unit / "native"
+    native.mkdir()
+    subprocess.run([str(configure), *common], cwd=native, check=True)
+    subprocess.run(["make"], cwd=native, check=True)
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    build_dir, stage = unit / "build", unit / "package/root"
+    build_dir.mkdir()
+    env = os.environ.copy()
+    # The sysroot has no C++ runtime, so embed it rather than depend on the host's libstdc++.
+    env.update({"CC": f"gcc --sysroot={root}", "CXX": f"g++ --sysroot={root}", "CFLAGS": "-O2 -pipe",
+                "CXXFLAGS": "-O2 -pipe",
+                "LDFLAGS": f"-static-libstdc++ -static-libgcc -Wl,-rpath-link,{root}/lib64"})
+    subprocess.run([str(configure), "--build=x86_64-pc-linux-gnu", "--host=x86_64-unknown-linux-gnu",
+                    f"--with-cross-build={native}", "--prefix=/usr", "--libdir=/usr/lib", *common],
+                   cwd=build_dir, env=env, check=True)
+    subprocess.run(["make"], cwd=build_dir, env=env, check=True)
+    subprocess.run(["make", "install", f"DESTDIR={stage}"], cwd=build_dir, env=env, check=True)
+    library = next((stage / "usr/lib").glob("libicuuc.so.*.*"), None)
+    if library is None:
+        raise RuntimeError("libicuuc not installed")
+    require_glibc_elf(library)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
 def native_libical_generator(upstream: Path, work: Path) -> Path:
     """libical-glib generates its sources with a tool that must run on the build machine."""
     native = work / "libical-native"
+    v4 = "LIBICAL_GLIB" in (upstream / "CMakeLists.txt").read_text()
+    flags = (["-DLIBICAL_GLIB=ON", "-DLIBICAL_GOBJECT_INTROSPECTION=OFF", "-DLIBICAL_GLIB_VAPI=OFF",
+              "-DLIBICAL_GLIB_BUILD_DOCS=OFF", "-DLIBICAL_BUILD_DOCS=OFF", "-DLIBICAL_BUILD_TESTING=OFF",
+              "-DLIBICAL_BUILD_EXAMPLES=OFF", "-DLIBICAL_JAVA_BINDINGS=OFF", "-DLIBICAL_CXX_BINDINGS=OFF"] if v4 else
+             ["-DICAL_GLIB=ON", "-DGOBJECT_INTROSPECTION=OFF", "-DICAL_GLIB_VAPI=OFF", "-DICAL_BUILD_DOCS=OFF",
+              "-DWITH_CXX_BINDINGS=OFF", "-DLIBICAL_BUILD_TESTING=OFF", "-DLIBICAL_BUILD_EXAMPLES=OFF"])
     subprocess.run(["cmake", "-S", str(upstream), "-B", str(native), "-G", "Ninja",
-                    f"-DCMAKE_INSTALL_PREFIX={native}/prefix", "-DLIBICAL_GLIB=ON",
-                    "-DLIBICAL_GOBJECT_INTROSPECTION=OFF", "-DLIBICAL_GLIB_VAPI=OFF",
-                    "-DLIBICAL_GLIB_BUILD_DOCS=OFF", "-DLIBICAL_BUILD_DOCS=OFF",
-                    "-DLIBICAL_BUILD_TESTING=OFF", "-DLIBICAL_BUILD_EXAMPLES=OFF",
-                    "-DLIBICAL_JAVA_BINDINGS=OFF", "-DLIBICAL_CXX_BINDINGS=OFF",
-                    "-DCMAKE_BUILD_TYPE=Release"], check=True)
+                    f"-DCMAKE_INSTALL_PREFIX={native}/prefix", "-DCMAKE_BUILD_TYPE=Release", *flags], check=True)
     subprocess.run(["cmake", "--build", str(native)], check=True)
     subprocess.run(["cmake", "--install", str(native)], check=True, stdout=subprocess.DEVNULL)
     exported = next((native / "prefix").rglob("IcalGlibSrcGenerator.cmake"))
@@ -160,11 +261,21 @@ def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path)
     unit.mkdir()
     upstream = source(lock, cache, unit / "source")
     extra = ()
-    if pkg.name == "libical":
+    glib_rules = upstream / "src/libical-glib/CMakeLists.txt"
+    # libical 4 needs a native copy of its generator when cross-compiling; 3.x runs it through the emulator.
+    if pkg.name == "libical" and "IMPORT_ICAL_GLIB_SRC_GENERATOR" in glib_rules.read_text():
         extra = (f"-DIMPORT_ICAL_GLIB_SRC_GENERATOR={native_libical_generator(upstream, unit)}",)
     sysroot = desktop.make_sysroot(output, unit, pkg.deps)
     root = sysroot.resolve()
     build_dir, stage = unit / "build", unit / "package/root"
+    # Run target programs (try_run checks, generators) through the target's own loader.
+    emulator = unit / "run-target"
+    emulator.write_text(
+        f'#!/bin/sh\nexport GCONV_PATH="{root}/usr/lib64/gconv"\n'
+        f'exec "{root}/lib64/ld-linux-x86-64.so.2" '
+        f'--library-path "{root}/lib64:{root}/usr/lib64:{root}/usr/lib" "$@"\n')
+    emulator.chmod(0o755)
+    extra = (*extra, f"-DCMAKE_CROSSCOMPILING_EMULATOR={emulator}")
     env = os.environ.copy()
     env.update({"PKG_CONFIG_SYSROOT_DIR": str(root),
                 "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"})
@@ -249,7 +360,7 @@ PACKAGES = [
     ),
     Package(
         "sqlite", ("glibc", "zlib"), kind="autotools",
-        options=("--disable-static", "--enable-shared", "--disable-readline", "--enable-fts5"),
+        options=("--disable-static", "--enable-shared", "--disable-readline", "--enable-fts5", "--soname=legacy"),
         pattern="libsqlite3.so.3.*",
     ),
     Package(
@@ -346,11 +457,11 @@ PACKAGES = [
     ),
     Package(
         "libical", ("glibc", "glibc", "glib", "libffi", "pcre2", "zlib", "libxml2", "sqlite"), kind="cmake",
-        options=("-DLIBICAL_GLIB=ON", "-DLIBICAL_GOBJECT_INTROSPECTION=OFF", "-DLIBICAL_BUILD_DOCS=OFF",
-                 "-DLIBICAL_GLIB_BUILD_DOCS=OFF", "-DLIBICAL_BUILD_TESTING=OFF",
-                 "-DLIBICAL_BUILD_EXAMPLES=OFF", "-DLIBICAL_GLIB_VAPI=OFF", "-DLIBICAL_STATIC=OFF",
-                 "-DUSE_BUILTIN_TZDATA=ON", "-DLIBICAL_JAVA_BINDINGS=OFF", "-DLIBICAL_CXX_BINDINGS=OFF"),
-        pattern="libical.so.4.*",
+        options=("-DICAL_GLIB=ON", "-DGOBJECT_INTROSPECTION=OFF", "-DICAL_BUILD_DOCS=OFF",
+                 "-DICAL_GLIB_VAPI=OFF", "-DWITH_CXX_BINDINGS=OFF", "-DSHARED_ONLY=ON",
+                 "-DUSE_BUILTIN_TZDATA=ON", "-DLIBICAL_BUILD_TESTING=OFF",
+                 "-DLIBICAL_BUILD_EXAMPLES=OFF"),
+        pattern="libical.so.3.*",
     ),
     Package(
         "libsecret", ("glibc", "glibc", "glib", "libffi", "pcre2", "zlib"), introspect=True,
@@ -368,9 +479,9 @@ PACKAGES = [
     Package(
         "evolution-data-server",
         ("glibc", "glib", "libffi", "pcre2", "zlib", "libsecret", "libsoup", "libical", "libxml2", "sqlite",
-         "json-glib", "util-linux", "libpsl", "nghttp2"),
+         "json-glib", "util-linux", "libpsl", "nghttp2", "nss", "nspr", "icu"),
         kind="cmake",
-        options=("-DENABLE_SMIME=OFF", "-DWITH_LIBDB=OFF", "-DENABLE_GOA=OFF", "-DENABLE_GTK=OFF",
+        options=("-DWITH_LIBDB=OFF", "-DENABLE_GOA=OFF", "-DENABLE_GTK=OFF",
                  "-DENABLE_GTK4=OFF", "-DENABLE_WEATHER=OFF", "-DENABLE_CANBERRA=OFF",
                  "-DENABLE_EXAMPLES=OFF", "-DENABLE_TESTS=OFF", "-DENABLE_INSTALLED_TESTS=OFF",
                  "-DENABLE_INTROSPECTION=OFF", "-DENABLE_VALA_BINDINGS=OFF", "-DENABLE_GTK_DOC=OFF",
@@ -379,6 +490,9 @@ PACKAGES = [
                  "-DENABLE_IPV6=OFF", "-DENABLE_LARGEFILE=OFF", "-DWITH_PHONENUMBER=OFF"),
         pattern="libedataserver-1.2.so.27.*",
     ),
+    Package("icu", ("glibc",), kind="custom"),
+    Package("nspr", ("glibc",), kind="custom"),
+    Package("nss", ("glibc", "nspr", "sqlite", "zlib"), kind="custom"),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
@@ -552,6 +666,8 @@ def main() -> int:
     parser.add_argument("names", nargs="*")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--keep", action="store_true",
+                        help="keep the temporary build directory (build/work) for debugging a failure")
     parser.add_argument("--jobs", type=int, default=int(os.environ.get("MELDRA_JOBS", "2")),
                         help="parallel compile jobs (default 2; this machine overheats)")
     parser.add_argument("--lock", type=Path, default=Path("sources.lock.toml"))
@@ -574,7 +690,13 @@ def main() -> int:
         parser.error(f"unknown package(s): {', '.join(sorted(unknown))}")
     args.output.mkdir(parents=True, exist_ok=True)
     try:
-        with tempfile.TemporaryDirectory(prefix="meldra-gnome-") as directory:
+        import contextlib
+        keep_dir = Path("build/work").resolve()
+        if args.keep:
+            shutil.rmtree(keep_dir, ignore_errors=True)
+            keep_dir.mkdir(parents=True)
+        with (contextlib.nullcontext(str(keep_dir)) if args.keep
+              else tempfile.TemporaryDirectory(prefix="meldra-gnome-")) as directory:
             work = Path(directory)
             gentle_environment(work, max(1, args.jobs))
             desktop.MESON = pinned_meson(lock_data["host_tools"]["meson"], args.cache, work)
@@ -597,7 +719,13 @@ def main() -> int:
                     continue
                 print(f"==> {pkg.name} {desktop.VERSIONS[pkg.name]}", flush=True)
                 lock = pin(lock_data, pkg.name)
-                if pkg.name == "duktape":
+                if pkg.name == "icu":
+                    icu_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.name == "nss":
+                    nss_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.name == "nspr":
+                    nspr_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.name == "duktape":
                     duktape_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.kind == "autotools-data":
                     autotools_data_build(pkg, lock, args.cache, work, args.output)

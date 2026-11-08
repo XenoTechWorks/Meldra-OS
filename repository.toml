@@ -411,3 +411,57 @@ name = "polkit"
 version = "128"
 status = "built"
 dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "expat", "duktape", "elogind", "dbus", "libcap", "util-linux", "eudev"]
+
+[[package]]
+name = "evolution-data-server"
+version = "3.58.3"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libsecret", "libsoup", "libical", "libxml2", "sqlite", "json-glib", "util-linux", "libpsl", "nghttp2", "nss", "nspr", "icu"]
+
+[[package]]
+name = "icu"
+version = "79.1"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libical"
+version = "3.0.20"
+status = "built"
+dependencies = ["glibc", "glibc", "glib", "libffi", "pcre2", "zlib", "libxml2", "sqlite"]
+
+[[package]]
+name = "libpsl"
+version = "0.23.3"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libsecret"
+version = "0.21.8.2"
+status = "built"
+dependencies = ["glibc", "glibc", "glib", "libffi", "pcre2", "zlib"]
+
+[[package]]
+name = "libsoup"
+version = "3.6.6"
+status = "built"
+dependencies = ["glibc", "glibc", "glib", "libffi", "pcre2", "zlib", "libpsl", "nghttp2", "sqlite", "libxml2"]
+
+[[package]]
+name = "nghttp2"
+version = "1.71.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "nspr"
+version = "4.40"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "nss"
+version = "3.133"
+status = "built"
+dependencies = ["glibc", "nspr", "sqlite", "zlib"]

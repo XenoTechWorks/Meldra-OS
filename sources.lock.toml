@@ -399,11 +399,10 @@ sha256 = "da136d1190d9e8b09499452f6058e24eee6b77f441a8c769f74a52451bf379f1"
 role = "calendar backend library the Shell requires (libecal, libedataserver)"
 
 [gnome.libical]
-version = "4.0.7"
-url = "https://github.com/libical/libical/releases/download/v4.0.7/libical-4.0.7.tar.gz"
-sha256 = "47c05bc96e41416578cf1803bb2ba3f8d292cb17d5ac2fca539dee922bae8a94"
-role = "calendar parsing (Evolution Data Server)"
-
+version = "3.0.20"
+url = "https://github.com/libical/libical/releases/download/v3.0.20/libical-3.0.20.tar.gz"
+sha256 = "e73de92f5a6ce84c1b00306446b290a2b08cdf0a80988eca0a2c9d5c3510b4c2"
+role = "calendar parsing (Evolution Data Server 3.58 needs libical 3.x; 4.x renamed its API). Checksum matches Debian's orig tarball"
 [gnome.libpsl]
 version = "0.23.3"
 url = "https://github.com/rockdaboot/libpsl/releases/download/0.23.3/libpsl-0.23.3.tar.gz"
@@ -439,3 +438,9 @@ version = "3.133"
 url = "https://ftp.mozilla.org/pub/security/nss/releases/NSS_3_133_RTM/src/nss-3.133.tar.gz"
 sha256 = "4d752526b9846a1d962588cfbd09b7cc2a4f6a4effbd9157d58a30e8a2573065"
 role = "crypto library Evolution Data Server's Camel requires; checksum from Mozilla's SHA256SUMS"
+
+[gnome.icu]
+version = "79.1"
+url = "https://github.com/unicode-org/icu/releases/download/release-79.1/icu4c-79.1-sources.tgz"
+sha256 = "06fa63ecb521048f8082f12ad988f6b678d90cbd88aafce24cbc94902b191d99"
+role = "Unicode (EDS requires icu-i18n)"
