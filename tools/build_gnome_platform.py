@@ -101,6 +101,35 @@ def introspection_cross_file(original):
     return make
 
 
+def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    build_dir, stage = unit / "build", unit / "package/root"
+    env = os.environ.copy()
+    env.update({"PKG_CONFIG_SYSROOT_DIR": str(root),
+                "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"})
+    subprocess.run(
+        ["cmake", "-S", str(upstream), "-B", str(build_dir), "-G", "Ninja",
+         "-DCMAKE_SYSTEM_NAME=Linux", "-DCMAKE_SYSTEM_PROCESSOR=x86_64",
+         "-DCMAKE_C_COMPILER=gcc", f"-DCMAKE_C_FLAGS=--sysroot={root} -O2",
+         f"-DCMAKE_EXE_LINKER_FLAGS=--sysroot={root} -Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
+         f"-DCMAKE_SHARED_LINKER_FLAGS=--sysroot={root} -Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
+         f"-DCMAKE_SYSROOT={root}", f"-DCMAKE_FIND_ROOT_PATH={root}",
+         "-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER", "-DCMAKE_INSTALL_PREFIX=/usr",
+         "-DCMAKE_INSTALL_LIBDIR=lib", "-DCMAKE_BUILD_TYPE=Release", *pkg.options],
+        env=env, check=True)
+    subprocess.run(["cmake", "--build", str(build_dir), "-j8"], env=env, check=True)
+    subprocess.run(["cmake", "--install", str(build_dir)], env={**env, "DESTDIR": str(stage)}, check=True)
+    library = next((stage / "usr/lib").glob(pkg.pattern), None)
+    if library is None:
+        raise RuntimeError(f"{pkg.name} library not installed: {pkg.pattern}")
+    require_glibc_elf(library)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
 PACKAGES = [
     Package(
         "glib", ("glibc", "libffi", "pcre2", "zlib"), introspect=True,
@@ -181,6 +210,34 @@ PACKAGES = [
         pattern="libgusb.so.2.*",
     ),
     Package(
+        "libjpeg-turbo", ("glibc",), kind="cmake",
+        options=("-DENABLE_STATIC=OFF", "-DENABLE_SHARED=ON", "-DWITH_TOOLS=OFF", "-DWITH_TESTS=OFF",
+                 "-DWITH_JAVA=OFF", "-DWITH_SIMD=ON"),
+        pattern="libjpeg.so.62.*",
+    ),
+    Package(
+        "libtiff", ("glibc", "zlib", "libjpeg-turbo"), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--disable-docs", "--disable-tools",
+                 "--disable-tests", "--disable-contrib", "--disable-lzma", "--disable-zstd",
+                 "--disable-webp", "--disable-lerc", "--disable-jbig", "--disable-cxx"),
+        pattern="libtiff.so.6.*",
+    ),
+    Package(
+        "gtk", ("glibc", "glib", "libffi", "pcre2", "zlib", "pango", "harfbuzz", "fribidi", "cairo",
+                "pixman", "freetype", "fontconfig", "libpng", "libtiff", "libjpeg-turbo", "gdk-pixbuf",
+                "graphene", "libepoxy", "libxkbcommon", "wayland", "wayland-protocols", "mesa",
+                "libdrm", "expat", "libxml2"),
+        introspect=True,
+        options=("-Dx11-backend=false", "-Dwayland-backend=true", "-Dbroadway-backend=false",
+                 "-Dmedia-gstreamer=disabled", "-Dprint-cups=disabled", "-Dprint-cpdb=disabled",
+                 "-Dvulkan=disabled", "-Dcloudproviders=disabled", "-Dsysprof=disabled",
+                 "-Dtracker=disabled", "-Dcolord=disabled", "-Dintrospection=enabled",
+                 "-Dbuild-demos=false", "-Dbuild-testsuite=false", "-Dbuild-examples=false",
+                 "-Dbuild-tests=false", "-Ddocumentation=false", "-Dman-pages=false",
+                 "-Dscreenshots=false"),
+        pattern="libgtk-4.so.1.*",
+    ),
+    Package(
         "libgudev", ("glibc", "glib", "libffi", "pcre2", "zlib", "eudev"), introspect=True,
         options=("-Dtests=disabled", "-Dintrospection=enabled", "-Dvapi=disabled", "-Dgtk_doc=false"),
         pattern="libgudev-1.0.so.0.*",
@@ -200,7 +257,7 @@ PACKAGES = [
                  "-Dchafa=disabled", "-Dpng=disabled", "-Dzlib=disabled", "-Dicu=disabled",
                  "-Dgraphite2=disabled", "-Dfontations=disabled", "-Dharfrust=disabled",
                  "-Dwasm=disabled", "-Draster=disabled", "-Dvector=disabled", "-Dgpu=disabled",
-                 "-Dsubset=disabled", "-Dtests=disabled", "-Ddocs=disabled",
+                 "-Dsubset=enabled", "-Dtests=disabled", "-Ddocs=disabled",
                  "-Dintrospection=enabled", "-Dutilities=disabled"),
         pattern="libharfbuzz.so.0.*",
     ),
@@ -277,6 +334,23 @@ def build_host_gi(lock: dict, cache: Path, work: Path) -> Path:
     return prefix
 
 
+HOST_WAYLAND = Path("build/host-tools/wayland")
+
+
+def build_host_wayland(lock: dict, cache: Path, work: Path) -> None:
+    """A native wayland-scanner at the pinned version, for packages that generate protocol code."""
+    prefix = HOST_WAYLAND.resolve()
+    if not (prefix / "bin/wayland-scanner").is_file():
+        upstream = source(lock, cache, work / "host-wayland-source")
+        build_dir = work / "host-wayland-build"
+        subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), f"--prefix={prefix}",
+                        "--libdir=lib", "-Dlibraries=false", "-Dscanner=true", "-Dtests=false",
+                        "-Ddocumentation=false", "-Ddtd_validation=false"], check=True)
+        subprocess.run([*desktop.MESON, "install", "-C", str(build_dir)], check=True)
+    os.environ["PATH"] = f"{prefix}/bin{os.pathsep}{os.environ['PATH']}"
+    os.environ["PKG_CONFIG_PATH_FOR_BUILD"] = f"{prefix}/lib/pkgconfig:{prefix}/share/pkgconfig"
+
+
 def meson_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     original = desktop.cross_file
     if pkg.introspect:
@@ -293,11 +367,35 @@ def _unused(pkg, lock, cache, work, output):
 
 
 
+def gentle_environment(work: Path, jobs: int) -> None:
+    """Cap parallelism for every build tool, since the build machine has no CPU fan.
+
+    ninja and make are found through PATH, so small wrappers force the job count and ignore the
+    -jN that individual build scripts hard-code.
+    """
+    bin_dir = work / "gentle-bin"
+    bin_dir.mkdir()
+    ninja = next(p for p in os.environ["PATH"].split(os.pathsep) if (Path(p) / "ninja").is_file())
+    make = next(p for p in os.environ["PATH"].split(os.pathsep) if (Path(p) / "make").is_file())
+    (bin_dir / "ninja").write_text(f'#!/bin/sh\nexec {ninja}/ninja -j{jobs} "$@"\n')
+    (bin_dir / "make").write_text(
+        "#!/bin/sh\nargs=\nfor a in \"$@\"; do\n  case \"$a\" in -j*) ;; *) args=\"$args '$a'\" ;; esac\ndone\n"
+        f'eval exec {make}/make -j{jobs} "$args"\n')
+    for name in ("ninja", "make"):
+        (bin_dir / name).chmod(0o755)
+    os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+    os.environ["MAKEFLAGS"] = f"-j{jobs}"
+    os.environ["CMAKE_BUILD_PARALLEL_LEVEL"] = str(jobs)
+    os.environ["CCACHE_NODIRECT"] = "1"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("names", nargs="*")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--jobs", type=int, default=int(os.environ.get("MELDRA_JOBS", "2")),
+                        help="parallel compile jobs (default 2; this machine overheats)")
     parser.add_argument("--lock", type=Path, default=Path("sources.lock.toml"))
     parser.add_argument("--cache", type=Path, default=Path("build/downloads"))
     parser.add_argument("--output", type=Path, default=Path("build/packages"))
@@ -320,7 +418,9 @@ def main() -> int:
     try:
         with tempfile.TemporaryDirectory(prefix="meldra-gnome-") as directory:
             work = Path(directory)
+            gentle_environment(work, max(1, args.jobs))
             desktop.MESON = pinned_meson(lock_data["host_tools"]["meson"], args.cache, work)
+            build_host_wayland(lock_data["desktop"]["wayland"], args.cache, work)
             # Build-time-only Python modules (templating), from pinned wheels.
             wheel_paths = []
             for tool in ("jinja2", "markupsafe"):
@@ -339,7 +439,9 @@ def main() -> int:
                     continue
                 print(f"==> {pkg.name} {desktop.VERSIONS[pkg.name]}", flush=True)
                 lock = pin(lock_data, pkg.name)
-                if pkg.kind == "autotools":
+                if pkg.kind == "cmake":
+                    cmake_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.kind == "autotools":
                     desktop.build_autotools(lock, pkg.name, args.cache, work, args.output,
                                             pkg.deps, pkg.options, pkg.pattern)
                 elif pkg.kind == "custom":
@@ -367,4 +469,11 @@ def pinned_meson(lock: dict, cache: Path, work: Path) -> tuple[str, ...]:
 
 
 if __name__ == "__main__":
+    # Lowest CPU and disk priority, so the machine stays responsive and cool.
+    try:
+        os.nice(19)
+        subprocess.run(["ionice", "-c3", "-p", str(os.getpid())], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
     raise SystemExit(main())

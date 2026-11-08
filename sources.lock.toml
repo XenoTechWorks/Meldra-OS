@@ -361,3 +361,15 @@ version = "0.4.9"
 url = "https://github.com/hughsie/libgusb/releases/download/0.4.9/libgusb-0.4.9.tar.xz"
 sha256 = "9df5ef301d6a4b361002aa52cce1165a87a89744055879bdbab31e7e86f1e846"
 role = "USB for colord. UNVERIFIED: upstream publishes no checksum; hash is from an HTTPS download"
+
+[gnome.libjpeg_turbo]
+version = "3.2.1"
+url = "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz"
+sha256 = "c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f"
+role = "JPEG codec (GTK4 requires it)"
+
+[gnome.libtiff]
+version = "4.7.2"
+url = "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.xz"
+sha256 = "4996f0c4f93094719b1ca5c6279b20e588773ba8a247533e486416fb662ddb88"
+role = "TIFF codec (GTK4 requires it). UNVERIFIED: no upstream SHA-256 checked; hash is from an HTTPS download"
