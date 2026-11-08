@@ -124,6 +124,21 @@ def meson_data_build(pkg: Package, lock: dict, cache: Path, work: Path, output: 
         desktop.cross_file = original
 
 
+def autotools_data_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Autotools package that installs only data; `pattern` is a path under the stage root."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    build_dir, stage = unit / "build", unit / "package/root"
+    build_dir.mkdir()
+    subprocess.run([str(upstream / "configure"), "--prefix=/usr", *pkg.options], cwd=build_dir, check=True)
+    subprocess.run(["make"], cwd=build_dir, check=True)
+    subprocess.run(["make", "install", f"DESTDIR={stage}"], cwd=build_dir, check=True)
+    if not (stage / pkg.pattern).exists():
+        raise RuntimeError(f"{pkg.name}: expected file not installed: {pkg.pattern}")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
 def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     unit = work / pkg.name
     unit.mkdir()
@@ -150,6 +165,34 @@ def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path)
     if library is None:
         raise RuntimeError(f"{pkg.name} library not installed: {pkg.pattern}")
     require_glibc_elf(library)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def duktape_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    stage = unit / "package/root"
+    root = sysroot.resolve()
+    subprocess.run(["make", "-f", "Makefile.sharedlibrary", f"CC=gcc --sysroot={root}", "-j1"],
+                   cwd=upstream, check=True)
+    lib, inc, pc = stage / "usr/lib", stage / "usr/include", stage / "usr/lib/pkgconfig"
+    for directory in (lib, inc, pc):
+        directory.mkdir(parents=True)
+    built = next(upstream.glob("libduktape.so.*"))
+    (lib / built.name).write_bytes(built.read_bytes())
+    (lib / built.name).chmod(0o755)
+    soname = ".".join(built.name.split(".")[:3])  # libduktape.so.207
+    (lib / soname).symlink_to(built.name)
+    (lib / "libduktape.so").symlink_to(soname)
+    for header in ("duktape.h", "duk_config.h"):
+        (inc / header).write_bytes(next(upstream.rglob(f"src/{header}")).read_bytes())
+    (pc / "duktape.pc").write_text(
+        f"prefix=/usr\nlibdir=${{prefix}}/lib\nincludedir=${{prefix}}/include\n\n"
+        f"Name: duktape\nDescription: Embeddable JavaScript engine\nVersion: {lock['version']}\n"
+        "Libs: -L${libdir} -lduktape\nCflags: -I${includedir}\n")
+    require_glibc_elf(lib / built.name)
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
@@ -259,6 +302,29 @@ PACKAGES = [
                  "-Dbuild-tests=false", "-Ddocumentation=false", "-Dman-pages=false",
                  "-Dscreenshots=false"),
         pattern="libgtk-4.so.1.*",
+    ),
+    Package("duktape", ("glibc",), kind="custom"),
+    Package(
+        "polkit", ("glibc", "glib", "libffi", "pcre2", "zlib", "expat", "duktape", "elogind", "dbus",
+                   "libcap", "util-linux", "eudev"),
+        introspect=True,
+        options=("-Dsession_tracking=elogind", "-Dauthfw=shadow", "-Dtests=false", "-Dman=false",
+                 "-Dintrospection=true", "-Dgettext=false", "-Dexamples=false",
+                 "-Dpolkitd_user=root", "--sysconfdir=/etc", "--localstatedir=/var"),
+        pattern="libpolkit-agent-1.so.0.*",
+    ),
+    Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
+    Package(
+        "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
+                          "fontconfig", "freetype", "libxkbcommon", "libxml2", "xkeyboard-config", "iso-codes",
+                          "eudev", "libseccomp", "pango", "cairo", "harfbuzz", "fribidi", "graphene",
+                          "libepoxy", "libpng", "libtiff", "libjpeg-turbo", "pixman", "wayland", "mesa",
+                          "libdrm", "expat"),
+        introspect=True,
+        options=("-Dbuild_gtk4=true", "-Dlegacy_library=false", "-Dudev=enabled", "-Dsystemd=disabled",
+                 "-Dintrospection=true", "-Ddesktop_docs=false", "-Ddebug_tools=false", "-Dgtk_doc=false",
+                 "-Dinstalled_tests=false"),
+        pattern="libgnome-desktop-4.so.2.*",
     ),
     Package(
         "libgudev", ("glibc", "glib", "libffi", "pcre2", "zlib", "eudev"), introspect=True,
@@ -462,7 +528,11 @@ def main() -> int:
                     continue
                 print(f"==> {pkg.name} {desktop.VERSIONS[pkg.name]}", flush=True)
                 lock = pin(lock_data, pkg.name)
-                if pkg.kind == "data":
+                if pkg.name == "duktape":
+                    duktape_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.kind == "autotools-data":
+                    autotools_data_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.kind == "data":
                     meson_data_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.kind == "cmake":
                     cmake_build(pkg, lock, args.cache, work, args.output)

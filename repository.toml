@@ -387,3 +387,27 @@ name = "sqlite"
 version = "3.54.1"
 status = "built"
 dependencies = ["glibc", "zlib"]
+
+[[package]]
+name = "duktape"
+version = "2.7.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "gnome-desktop"
+version = "44.5"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas", "fontconfig", "freetype", "libxkbcommon", "libxml2", "xkeyboard-config", "iso-codes", "eudev", "libseccomp", "pango", "cairo", "harfbuzz", "fribidi", "graphene", "libepoxy", "libpng", "libtiff", "libjpeg-turbo", "pixman", "wayland", "mesa", "libdrm", "expat"]
+
+[[package]]
+name = "iso-codes"
+version = "4.20.1"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "polkit"
+version = "128"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "expat", "duktape", "elogind", "dbus", "libcap", "util-linux", "eudev"]

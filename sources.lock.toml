@@ -373,3 +373,21 @@ version = "4.7.2"
 url = "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.xz"
 sha256 = "4996f0c4f93094719b1ca5c6279b20e588773ba8a247533e486416fb662ddb88"
 role = "TIFF codec (GTK4 requires it). UNVERIFIED: no upstream SHA-256 checked; hash is from an HTTPS download"
+
+[gnome.iso_codes]
+version = "4.20.1"
+url = "https://deb.debian.org/debian/pool/main/i/iso-codes/iso-codes_4.20.1.orig.tar.xz"
+sha256 = "5d551f3ddb32548c4321e9011720fd97751af0107592f79ebffc939bd32f2268"
+role = "country, language and currency names (gnome-desktop); verified against Debian's source index"
+
+[gnome.polkit]
+version = "128"
+url = "https://github.com/polkit-org/polkit/archive/e6373dc19975d8583568c6cd7025d03e682ca956.tar.gz"
+sha256 = "70096dee2111b5b4077a2eaddabde77fd9db3336f6b3f7a50d2ee09bf60291c3"
+role = "authorization (Shell's auth agent). Pinned to commit e6373dc = tag 128; upstream tag and commit are unsigned, hash is from an HTTPS download"
+
+[gnome.duktape]
+version = "2.7.0"
+url = "https://duktape.org/duktape-2.7.0.tar.xz"
+sha256 = "90f8d2fa8b5567c6899830ddef2c03f3c27960b11aca222fa17aa7ac613c2890"
+role = "JavaScript engine for polkit rules; checksum matches Debian's orig tarball"
