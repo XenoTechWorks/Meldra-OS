@@ -7,6 +7,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+import tarfile
+import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from kiln.cli import install
@@ -35,10 +37,53 @@ def write_base_configuration(root: Path) -> None:
         encoding="utf-8",
     )
     (etc / "passwd").write_text("root:x:0:0:root:/root:/bin/sh\n", encoding="utf-8")
-    (etc / "group").write_text("root:x:0:\n", encoding="utf-8")
+    (etc / "group").write_text(
+        "root:x:0:\nkmem:x:2:\ntty:x:5:\ndisk:x:6:\nlp:x:7:\n"
+        "dialout:x:18:\nvideo:x:27:\ninput:x:28:\naudio:x:29:\n"
+        "render:x:104:\nclock:x:105:\n",
+        encoding="utf-8",
+    )
     for directory in ("boot", "dev", "home", "proc", "root", "run", "sys", "tmp", "var/log"):
         (root / directory).mkdir(parents=True, exist_ok=True)
     (root / "tmp").chmod(0o1777)
+    (root / "init").symlink_to("sbin/hearth")
+
+
+def package_manifest(path: Path) -> dict:
+    with tarfile.open(path, "r:*") as archive:
+        stream = archive.extractfile("KILN.toml")
+        if stream is None:
+            raise RuntimeError(f"package has no manifest: {path}")
+        return tomllib.loads(stream.read().decode("utf-8"))["package"]
+
+
+def dependency_order(packages: list[Path]) -> list[Path]:
+    by_name: dict[str, tuple[Path, dict]] = {}
+    for path in packages:
+        package = package_manifest(path)
+        name = package["name"]
+        if name in by_name:
+            raise RuntimeError(f"duplicate package name: {name}")
+        by_name[name] = (path, package)
+    remaining = dict(by_name)
+    installed: set[str] = set()
+    ordered: list[Path] = []
+    while remaining:
+        ready = sorted(
+            name for name, (_, package) in remaining.items()
+            if set(package.get("dependencies", [])) <= installed
+        )
+        if not ready:
+            details = ", ".join(
+                f"{name} -> {package.get('dependencies', [])}"
+                for name, (_, package) in sorted(remaining.items())
+            )
+            raise RuntimeError(f"unresolved package dependencies: {details}")
+        for name in ready:
+            path, _ = remaining.pop(name)
+            ordered.append(path)
+            installed.add(name)
+    return ordered
 
 
 def main() -> int:
@@ -53,8 +98,12 @@ def main() -> int:
     packages = sorted(args.packages.glob("*.kiln"))
     if not packages:
         parser.error(f"no .kiln packages in {args.packages}")
-    for package in packages:
-        print(install(package, args.root))
+    try:
+        ordered = dependency_order(packages)
+        for package in ordered:
+            print(install(package, args.root))
+    except RuntimeError as exc:
+        parser.error(str(exc))
     print(f"assembled Meldra root at {args.root}")
     return 0
 

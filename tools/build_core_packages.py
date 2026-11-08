@@ -38,7 +38,7 @@ def build_hearth(binary: Path, work: Path, output: Path) -> None:
     shutil.copytree(Path("init/services"), services)
     write_manifest(
         source / "KILN.toml", "hearth", "0.1.0",
-        "Meldra service supervisor and PID 1", ("busybox",)
+        "Meldra service supervisor and PID 1", ("busybox", "glibc")
     )
     build(source, output / "hearth-0.1.0.kiln")
 

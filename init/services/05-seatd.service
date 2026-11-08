@@ -1,0 +1,2 @@
+command=/usr/bin/seatd -g video
+respawn=yes

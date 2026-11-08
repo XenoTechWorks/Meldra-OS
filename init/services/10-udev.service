@@ -1,2 +1,2 @@
-command=/usr/lib/systemd/systemd-udevd
+command=/usr/sbin/udevd
 respawn=yes

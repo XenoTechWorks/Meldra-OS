@@ -62,6 +62,7 @@ static void mount_early_filesystems(void) {
     mount_one("proc", "/proc", "proc", 0, NULL);
     mount_one("sysfs", "/sys", "sysfs", 0, NULL);
     mount_one("devtmpfs", "/dev", "devtmpfs", 0, "mode=0755");
+    mount_one("tmpfs", "/dev/shm", "tmpfs", MS_NOSUID | MS_NODEV, "mode=1777");
     mount_one("tmpfs", "/run", "tmpfs", MS_NOSUID | MS_NODEV, "mode=0755");
 }
 
@@ -149,6 +150,8 @@ int main(int argc, char **argv) {
     }
     struct service services[MAX_SERVICES] = {0};
     if (!dry_run) mount_early_filesystems();
+    setenv("PATH", "/usr/bin:/usr/sbin:/bin:/sbin", 0);
+    setenv("LD_LIBRARY_PATH", "/usr/lib:/usr/lib64:/lib:/lib64", 0);
     install_signals();
     size_t count = load_services(directory, services);
     for (size_t i = 0; i < count; ++i) start_service(&services[i], dry_run);

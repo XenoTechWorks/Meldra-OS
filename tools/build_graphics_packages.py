@@ -15,6 +15,7 @@ import tarfile
 import tempfile
 import tomllib
 import urllib.request
+import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from kiln.cli import build, install
@@ -53,6 +54,27 @@ def source(lock: dict, cache: Path, work: Path) -> Path:
     return roots[0]
 
 
+def python_wheel(lock: dict, cache: Path, work: Path) -> Path:
+    wheel = cache / Path(lock["url"]).name
+    cache.mkdir(parents=True, exist_ok=True)
+    if not wheel.is_file():
+        temporary = wheel.with_suffix(wheel.suffix + ".part")
+        with urllib.request.urlopen(lock["url"], timeout=60) as response, temporary.open("wb") as output:
+            shutil.copyfileobj(response, output)
+        temporary.replace(wheel)
+    if digest(wheel) != lock["sha256"]:
+        raise RuntimeError(f"checksum mismatch: {wheel}")
+    target = work / "python-build-tools"
+    target.mkdir()
+    with zipfile.ZipFile(wheel) as bundle:
+        for member in bundle.infolist():
+            path = Path(member.filename)
+            if path.is_absolute() or ".." in path.parts:
+                raise RuntimeError(f"unsafe wheel member: {member.filename}")
+        bundle.extractall(target)
+    return target
+
+
 def run(*command: str, env: dict[str, str] | None = None) -> None:
     subprocess.run(command, check=True, env=env)
 
@@ -63,6 +85,15 @@ def require_glibc_elf(path: Path) -> None:
     )
     if "Shared library: [libc.so.6]" not in result.stdout:
         raise RuntimeError(f"target is not linked to glibc: {path}")
+
+
+def require_embedded_gcc_runtime(path: Path) -> None:
+    result = subprocess.run(
+        ["readelf", "-d", str(path)], capture_output=True, text=True, check=True
+    )
+    for library in ("libstdc++.so", "libgcc_s.so"):
+        if library in result.stdout:
+            raise RuntimeError(f"undeclared GCC runtime dependency in {path}: {library}")
 
 
 def manifest(root: Path, name: str, version: str, dependencies: tuple[str, ...]) -> Path:
@@ -128,6 +159,34 @@ def build_autotools(
     build(package, output / f"{name}-{lock['version']}.kiln")
 
 
+def build_zlib(
+    lock: dict, cache: Path, work: Path, output: Path, sysroot: Path
+) -> None:
+    upstream = source(lock, cache, work / "zlib-source")
+    build_dir = work / "zlib-build"
+    stage = work / "zlib-package/root"
+    build_dir.mkdir()
+    environment = target_environment(sysroot)
+    subprocess.run(
+        [str(upstream / "configure"), "--prefix=/usr"], cwd=build_dir,
+        env=environment, check=True,
+    )
+    subprocess.run(["make", "-j8"], cwd=build_dir, env=environment, check=True)
+    subprocess.run(
+        ["make", "install", f"DESTDIR={stage}"], cwd=build_dir,
+        env=environment, check=True,
+    )
+    library = next((stage / "usr/lib").glob("libz.so.1.*"), None)
+    if library is None:
+        raise RuntimeError("zlib shared library was not installed")
+    require_glibc_elf(library)
+    static = stage / "usr/lib/libz.a"
+    if static.is_file():
+        static.unlink()
+    package = manifest(stage, "zlib", lock["version"], ("glibc",))
+    build(package, output / f"zlib-{lock['version']}.kiln")
+
+
 def build_protocols(lock: dict, cache: Path, work: Path, output: Path) -> None:
     upstream = source(lock, cache, work / "protocols-source")
     stage = work / "protocols-package/root"
@@ -186,7 +245,14 @@ def build_wayland(lock: dict, cache: Path, work: Path, output: Path, base_sysroo
     )
     environment = os.environ.copy()
     environment["PATH"] = f"{native_prefix / 'bin'}:{environment['PATH']}"
-    environment["PKG_CONFIG_PATH"] = str(native_prefix / "lib/pkgconfig")
+    native_pkgconfig = ":".join(
+        (str(native_prefix / "lib64/pkgconfig"), str(native_prefix / "lib/pkgconfig"))
+    )
+    environment["PKG_CONFIG_PATH"] = native_pkgconfig
+    # Meson separates host and build-machine pkg-config lookups during a cross
+    # build. wayland-scanner is a build-machine dependency, so the unqualified
+    # path above is insufficient on hosts carrying an older Wayland release.
+    environment["PKG_CONFIG_PATH_FOR_BUILD"] = native_pkgconfig
     run(
         "meson", "setup", str(build_dir), str(upstream), "--prefix=/usr",
         "--cross-file", str(cross), "-Dtests=false", "-Ddocumentation=false",
@@ -243,6 +309,286 @@ def build_libdrm(lock: dict, cache: Path, work: Path, output: Path, sysroot: Pat
     build(package, output / f"libdrm-{lock['version']}.kiln")
 
 
+def build_libxkbcommon(lock: dict, cache: Path, work: Path, output: Path, sysroot: Path) -> None:
+    upstream = source(lock, cache, work / "libxkbcommon-source")
+    stage = work / "libxkbcommon-package/root"
+    build_dir = work / "libxkbcommon-build"
+    cross = work / "libxkbcommon-cross.ini"
+    cross.write_text(
+        "[binaries]\n"
+        f"c = ['gcc', '--sysroot={sysroot.resolve()}']\n"
+        "ar = 'ar'\nstrip = 'strip'\npkg-config = 'pkg-config'\n"
+        "[host_machine]\nsystem = 'linux'\ncpu_family = 'x86_64'\n"
+        "cpu = 'x86_64'\nendian = 'little'\n"
+        "[properties]\nneeds_exe_wrapper = true\n"
+        f"sys_root = '{sysroot.resolve()}'\n"
+        f"pkg_config_libdir = ['{sysroot.resolve()}/usr/lib64/pkgconfig', "
+        f"'{sysroot.resolve()}/usr/lib/pkgconfig', '{sysroot.resolve()}/usr/share/pkgconfig']\n",
+        encoding="utf-8",
+    )
+    run(
+        "meson", "setup", str(build_dir), str(upstream), "--prefix=/usr",
+        "--cross-file", str(cross), "-Denable-tools=false", "-Denable-x11=false",
+        "-Denable-wayland=false", "-Denable-xkbregistry=false",
+        "-Denable-bash-completion=false", "-Denable-docs=false",
+    )
+    run("meson", "compile", "-C", str(build_dir))
+    run("meson", "install", "-C", str(build_dir), "--destdir", str(stage))
+    library = next((stage / "usr/lib").glob("libxkbcommon.so.0.*"), None)
+    if library is None:
+        raise RuntimeError("libxkbcommon shared library was not installed")
+    require_glibc_elf(library)
+    package = manifest(stage, "libxkbcommon", lock["version"], ("glibc",))
+    build(package, output / f"libxkbcommon-{lock['version']}.kiln")
+
+
+def build_libinput(lock: dict, cache: Path, work: Path, output: Path) -> None:
+    upstream = source(lock, cache, work / "libinput-source")
+    sysroot = work / "libinput-sysroot"
+    sysroot.mkdir()
+    dependencies = (
+        ("glibc", "2.44"),
+        ("eudev", "3.3.0"),
+        ("libevdev", "1.13.4"),
+        ("mtdev", "1.1.7"),
+    )
+    for name, version in dependencies:
+        archive = output / f"{name}-{version}.kiln"
+        if not archive.is_file():
+            raise RuntimeError(f"libinput build dependency package missing: {archive}")
+        install(archive, sysroot)
+    stage = work / "libinput-package/root"
+    build_dir = work / "libinput-build"
+    cross = work / "libinput-cross.ini"
+    loader = sysroot / "lib64/ld-linux-x86-64.so.2"
+    library_path = f"{sysroot}/lib64:{sysroot}/usr/lib64:{sysroot}/usr/lib"
+    cross.write_text(
+        "[binaries]\n"
+        f"c = ['gcc', '--sysroot={sysroot.resolve()}']\n"
+        "ar = 'ar'\nstrip = 'strip'\npkg-config = 'pkg-config'\n"
+        f"exe_wrapper = ['{loader.resolve()}', '--library-path', '{library_path}']\n"
+        "[host_machine]\nsystem = 'linux'\ncpu_family = 'x86_64'\n"
+        "cpu = 'x86_64'\nendian = 'little'\n"
+        "[properties]\n"
+        f"sys_root = '{sysroot.resolve()}'\n"
+        f"pkg_config_libdir = ['{sysroot.resolve()}/usr/lib64/pkgconfig', "
+        f"'{sysroot.resolve()}/usr/lib/pkgconfig', '{sysroot.resolve()}/usr/share/pkgconfig']\n",
+        encoding="utf-8",
+    )
+    run(
+        "meson", "setup", str(build_dir), str(upstream), "--prefix=/usr",
+        "--cross-file", str(cross), "-Dtests=false", "-Ddocumentation=false",
+        "-Ddebug-gui=false", "-Dlibwacom=false", "-Dlua-plugins=disabled",
+        "-Dzshcompletiondir=no",
+    )
+    run("meson", "compile", "-C", str(build_dir))
+    run("meson", "install", "-C", str(build_dir), "--destdir", str(stage))
+    library = next((stage / "usr/lib").glob("libinput.so.10.*"), None)
+    if library is None:
+        raise RuntimeError("libinput shared library was not installed")
+    require_glibc_elf(library)
+    package = manifest(
+        stage, "libinput", lock["version"], ("glibc", "eudev", "libevdev", "mtdev")
+    )
+    build(package, output / f"libinput-{lock['version']}.kiln")
+
+
+def build_mesa(
+    lock: dict, pyyaml_lock: dict, cache: Path, work: Path, output: Path
+) -> None:
+    upstream = source(lock, cache, work / "mesa-source")
+    build_python = python_wheel(pyyaml_lock, cache, work)
+    sysroot = work / "mesa-sysroot"
+    sysroot.mkdir()
+    dependencies = (
+        ("glibc", "2.44"),
+        ("libdrm", "2.4.134"),
+        ("libffi", "3.8.0"),
+        ("expat", "2.10.0"),
+        ("wayland", "1.26.0"),
+        ("wayland-protocols", "1.49"),
+    )
+    for name, version in dependencies:
+        archive = output / f"{name}-{version}.kiln"
+        if not archive.is_file():
+            raise RuntimeError(f"Mesa build dependency package missing: {archive}")
+        install(archive, sysroot)
+    stage = work / "mesa-package/root"
+    build_dir = work / "mesa-build"
+    cross = work / "mesa-cross.ini"
+    loader = sysroot / "lib64/ld-linux-x86-64.so.2"
+    library_path = f"{sysroot}/lib64:{sysroot}/usr/lib64:{sysroot}/usr/lib"
+    cross.write_text(
+        "[binaries]\n"
+        f"c = ['gcc', '--sysroot={sysroot.resolve()}']\n"
+        f"cpp = ['g++', '--sysroot={sysroot.resolve()}']\n"
+        "ar = 'ar'\nstrip = 'strip'\npkg-config = 'pkg-config'\n"
+        f"exe_wrapper = ['{loader.resolve()}', '--library-path', '{library_path}']\n"
+        "[host_machine]\nsystem = 'linux'\ncpu_family = 'x86_64'\n"
+        "cpu = 'x86_64'\nendian = 'little'\n"
+        "[built-in options]\n"
+        "c_link_args = ['-static-libgcc']\n"
+        "cpp_link_args = ['-static-libgcc', '-static-libstdc++']\n"
+        "[properties]\n"
+        f"sys_root = '{sysroot.resolve()}'\n"
+        f"pkg_config_libdir = ['{sysroot.resolve()}/usr/lib64/pkgconfig', "
+        f"'{sysroot.resolve()}/usr/lib/pkgconfig', '{sysroot.resolve()}/usr/share/pkgconfig']\n",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(build_python)
+    native_tools = work / "mesa-native-tools"
+    native_tools.mkdir()
+    scanner_wrapper = native_tools / "wayland-scanner"
+    scanner_wrapper.write_text(
+        "#!/bin/sh\n"
+        f'exec "{loader.resolve()}" --library-path "{library_path}" '
+        f'"{(sysroot / "usr/bin/wayland-scanner").resolve()}" "$@"\n',
+        encoding="utf-8",
+    )
+    scanner_wrapper.chmod(0o755)
+    environment["PATH"] = f"{native_tools}:{environment['PATH']}"
+    run(
+        "meson", "setup", str(build_dir), str(upstream), "--prefix=/usr",
+        "--cross-file", str(cross), "-Dplatforms=wayland",
+        "-Dgallium-drivers=softpipe", "-Dvulkan-drivers=[]", "-Dglx=disabled",
+        "-Degl=enabled", "-Dgbm=enabled", "-Dgles1=enabled", "-Dgles2=enabled",
+        "-Dopengl=true", "-Dllvm=disabled", "-Dshared-llvm=disabled",
+        "-Ddraw-use-llvm=false", "-Dlibunwind=disabled", "-Dzlib=disabled",
+        "-Dshader-cache=disabled",
+        "-Dvalgrind=disabled", "-Dbuild-tests=false", "-Dgallium-va=disabled",
+        "-Dvideo-codecs=[]",
+        env=environment,
+    )
+    run("meson", "compile", "-C", str(build_dir), env=environment)
+    run(
+        "meson", "install", "-C", str(build_dir), "--destdir", str(stage),
+        env=environment,
+    )
+    egl = next((stage / "usr/lib").glob("libEGL.so.1.*"), None)
+    gallium = next((stage / "usr/lib").glob("libgallium-*.so"), None)
+    gbm_backend = stage / "usr/lib/gbm/dri_gbm.so"
+    if egl is None or gallium is None or not gbm_backend.is_file():
+        raise RuntimeError("Mesa EGL, Gallium, or GBM driver was not installed")
+    require_glibc_elf(egl)
+    require_glibc_elf(gallium)
+    require_glibc_elf(gbm_backend)
+    require_embedded_gcc_runtime(egl)
+    require_embedded_gcc_runtime(gallium)
+    require_embedded_gcc_runtime(gbm_backend)
+    package = manifest(
+        stage, "mesa", lock["version"],
+        ("glibc", "libdrm", "libffi", "expat", "wayland", "wayland-protocols"),
+    )
+    build(package, output / f"mesa-{lock['version']}.kiln")
+
+
+def build_small_meson_library(
+    lock: dict, name: str, cache: Path, work: Path, output: Path,
+    sysroot: Path, options: tuple[str, ...], library_pattern: str,
+) -> None:
+    upstream = source(lock, cache, work / f"{name}-source")
+    stage = work / f"{name}-package/root"
+    build_dir = work / f"{name}-build"
+    cross = work / f"{name}-cross.ini"
+    cross.write_text(
+        "[binaries]\n"
+        f"c = ['gcc', '--sysroot={sysroot.resolve()}']\n"
+        "ar = 'ar'\nstrip = 'strip'\npkg-config = 'pkg-config'\n"
+        "[host_machine]\nsystem = 'linux'\ncpu_family = 'x86_64'\n"
+        "cpu = 'x86_64'\nendian = 'little'\n"
+        "[properties]\n"
+        f"sys_root = '{sysroot.resolve()}'\n"
+        f"pkg_config_libdir = ['{sysroot.resolve()}/usr/lib64/pkgconfig', "
+        f"'{sysroot.resolve()}/usr/lib/pkgconfig', '{sysroot.resolve()}/usr/share/pkgconfig']\n",
+        encoding="utf-8",
+    )
+    run(
+        "meson", "setup", str(build_dir), str(upstream), "--prefix=/usr",
+        "--cross-file", str(cross), *options,
+    )
+    run("meson", "compile", "-C", str(build_dir))
+    run("meson", "install", "-C", str(build_dir), "--destdir", str(stage))
+    library = next((stage / "usr/lib").glob(library_pattern), None)
+    if library is None:
+        raise RuntimeError(f"{name} shared library was not installed")
+    require_glibc_elf(library)
+    package = manifest(stage, name, lock["version"], ("glibc",))
+    build(package, output / f"{name}-{lock['version']}.kiln")
+
+
+def build_wlroots(lock: dict, cache: Path, work: Path, output: Path) -> None:
+    upstream = source(lock, cache, work / "wlroots-source")
+    sysroot = work / "wlroots-sysroot"
+    sysroot.mkdir()
+    dependencies = (
+        ("glibc", "2.44"), ("libdrm", "2.4.134"), ("libffi", "3.8.0"),
+        ("expat", "2.10.0"), ("wayland", "1.26.0"),
+        ("wayland-protocols", "1.49"), ("mesa", "26.2.5"),
+        ("libxkbcommon", "1.11.0"), ("eudev", "3.3.0"),
+        ("libevdev", "1.13.4"), ("mtdev", "1.1.7"),
+        ("libinput", "1.30.1"), ("pixman", "0.46.4"), ("seatd", "0.9.3"),
+        ("libdisplay-info", "0.4.0"),
+    )
+    for name, version in dependencies:
+        archive = output / f"{name}-{version}.kiln"
+        if not archive.is_file():
+            raise RuntimeError(f"wlroots build dependency package missing: {archive}")
+        install(archive, sysroot)
+    stage = work / "wlroots-package/root"
+    build_dir = work / "wlroots-build"
+    cross = work / "wlroots-cross.ini"
+    loader = sysroot / "lib64/ld-linux-x86-64.so.2"
+    library_path = f"{sysroot}/lib64:{sysroot}/usr/lib64:{sysroot}/usr/lib"
+    cross.write_text(
+        "[binaries]\n"
+        f"c = ['gcc', '--sysroot={sysroot.resolve()}']\n"
+        "ar = 'ar'\nstrip = 'strip'\npkg-config = 'pkg-config'\n"
+        f"exe_wrapper = ['{loader.resolve()}', '--library-path', '{library_path}']\n"
+        "[host_machine]\nsystem = 'linux'\ncpu_family = 'x86_64'\n"
+        "cpu = 'x86_64'\nendian = 'little'\n"
+        "[properties]\n"
+        f"sys_root = '{sysroot.resolve()}'\n"
+        f"pkg_config_libdir = ['{sysroot.resolve()}/usr/lib64/pkgconfig', "
+        f"'{sysroot.resolve()}/usr/lib/pkgconfig', '{sysroot.resolve()}/usr/share/pkgconfig']\n",
+        encoding="utf-8",
+    )
+    native_tools = work / "wlroots-native-tools"
+    native_tools.mkdir()
+    scanner_wrapper = native_tools / "wayland-scanner"
+    scanner_wrapper.write_text(
+        "#!/bin/sh\n"
+        f'exec "{loader.resolve()}" --library-path "{library_path}" '
+        f'"{(sysroot / "usr/bin/wayland-scanner").resolve()}" "$@"\n',
+        encoding="utf-8",
+    )
+    scanner_wrapper.chmod(0o755)
+    environment = os.environ.copy()
+    environment["PATH"] = f"{native_tools}:{environment['PATH']}"
+    run(
+        "meson", "setup", str(build_dir), str(upstream), "--prefix=/usr",
+        "--cross-file", str(cross), "-Dexamples=false", "-Dxwayland=disabled",
+        "-Drenderers=gles2", "-Dbackends=drm,libinput", "-Dallocators=gbm",
+        "-Dsession=enabled", "-Dcolor-management=disabled",
+        "-Dlibliftoff=disabled", "-Dc_args=-Wno-error=discarded-qualifiers",
+        env=environment,
+    )
+    run("meson", "compile", "-C", str(build_dir), env=environment)
+    run(
+        "meson", "install", "-C", str(build_dir), "--destdir", str(stage),
+        env=environment,
+    )
+    library = next((stage / "usr/lib").glob("libwlroots-0.19.so*"), None)
+    if library is None:
+        raise RuntimeError("wlroots shared library was not installed")
+    require_glibc_elf(library)
+    package = manifest(
+        stage, "wlroots", lock["version"],
+        tuple(name for name, _ in dependencies),
+    )
+    build(package, output / f"wlroots-{lock['version']}.kiln")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lock", type=Path, default=Path("sources.lock.toml"))
@@ -250,7 +596,8 @@ def main() -> int:
     parser.add_argument("--sysroot", type=Path, default=Path("build/sysroots/glibc"))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    locks = tomllib.loads(args.lock.read_text(encoding="utf-8"))["desktop"]
+    lock_data = tomllib.loads(args.lock.read_text(encoding="utf-8"))
+    locks = lock_data["desktop"]
     args.output.mkdir(parents=True, exist_ok=True)
     try:
         with tempfile.TemporaryDirectory(prefix="meldra-graphics-") as directory:
@@ -264,9 +611,59 @@ def main() -> int:
                 ("--disable-static", "--enable-shared", "--without-xmlwf",
                  "--without-docbook", "--without-tests", "--without-examples"),
             )
+            build_zlib(locks["zlib"], args.cache, work, args.output, args.sysroot)
+            build_autotools(
+                locks["pcre2"], "pcre2", args.cache, work, args.output,
+                args.sysroot, ("--disable-static", "--enable-shared",
+                               "--enable-pcre2-8", "--disable-pcre2-16",
+                               "--disable-pcre2-32", "--disable-pcre2grep-jit"),
+            )
+            build_autotools(
+                locks["libevdev"], "libevdev", args.cache, work, args.output,
+                args.sysroot, ("--disable-static", "--enable-shared"),
+            )
+            build_autotools(
+                locks["mtdev"], "mtdev", args.cache, work, args.output,
+                args.sysroot, ("--disable-static", "--enable-shared"),
+            )
+            build_autotools(
+                locks["eudev"], "eudev", args.cache, work, args.output,
+                args.sysroot,
+                ("--disable-static", "--enable-shared", "--disable-blkid",
+                 "--disable-selinux", "--disable-kmod", "--disable-manpages",
+                 "--disable-systemd-hwdb", "--disable-mtd_probe", "--disable-tpm2",
+                 "--with-rootprefix=/usr", "--with-rootlibdir=/usr/lib",
+                 "--with-rootlibexecdir=/usr/lib/udev"),
+            )
             build_wayland(locks["wayland"], args.cache, work, args.output, args.sysroot)
             build_protocols(locks["wayland_protocols"], args.cache, work, args.output)
             build_libdrm(locks["libdrm"], args.cache, work, args.output, args.sysroot)
+            build_libxkbcommon(
+                locks["libxkbcommon"], args.cache, work, args.output, args.sysroot
+            )
+            build_libinput(locks["libinput"], args.cache, work, args.output)
+            build_mesa(
+                locks["mesa"], lock_data["host_tools"]["pyyaml"],
+                args.cache, work, args.output,
+            )
+            build_small_meson_library(
+                locks["pixman"], "pixman", args.cache, work, args.output,
+                args.sysroot, ("-Dtests=disabled", "-Ddemos=disabled", "-Dgtk=disabled",
+                               "-Dlibpng=disabled", "-Dopenmp=disabled"),
+                "libpixman-1.so.0.*",
+            )
+            build_small_meson_library(
+                locks["seatd"], "seatd", args.cache, work, args.output,
+                args.sysroot, ("-Dlibseat-logind=disabled", "-Dlibseat-seatd=enabled",
+                               "-Dserver=enabled", "-Dexamples=disabled",
+                               "-Dman-pages=disabled"),
+                "libseat.so.1",
+            )
+            build_small_meson_library(
+                locks["libdisplay_info"], "libdisplay-info", args.cache, work,
+                args.output, args.sysroot, (), "libdisplay-info.so.0.*",
+            )
+            build_wlroots(locks["wlroots"], args.cache, work, args.output)
     except (OSError, RuntimeError, subprocess.CalledProcessError, tarfile.TarError) as exc:
         print(f"build_graphics_packages: {exc}", file=sys.stderr)
         return 1

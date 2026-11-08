@@ -1,2 +1,2 @@
-command=/usr/bin/dbus-daemon --system --nofork
+command=while [ ! -x /usr/bin/dbus-daemon ]; do /bin/sleep 5; done; exec /usr/bin/dbus-daemon --system --nofork
 respawn=yes

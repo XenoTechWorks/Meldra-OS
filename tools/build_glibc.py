@@ -90,7 +90,9 @@ def main() -> int:
             jobs = min(8, max(1, os.cpu_count() or 2))
             subprocess.run(["make", f"-j{jobs}"], cwd=BUILD, check=True)
             subprocess.run(["make", "install", f"DESTDIR={SYSROOT}"], cwd=BUILD, check=True)
-        for header_tree in ("linux", "asm", "asm-generic"):
+        # Keep the complete installed UAPI groups needed by userspace device
+        # managers. MTD headers live beside linux/ rather than beneath it.
+        for header_tree in ("linux", "asm", "asm-generic", "mtd"):
             source_headers = LINUX_HEADERS / header_tree
             if not source_headers.is_dir():
                 raise RuntimeError(f"Linux UAPI headers missing: {source_headers}")

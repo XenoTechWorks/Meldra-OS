@@ -1,2 +1,2 @@
-command=/sbin/agetty --noclear tty1 115200,38400,9600 linux
+command=/bin/getty 115200 tty1 linux
 respawn=yes

@@ -27,7 +27,13 @@ CHECKS = [
     ("Initramfs", lambda: Path("build/meldra-initramfs.cpio.gz").is_file()),
     ("QEMU available", qemu_available),
     ("Boot smoke passed", lambda: Path("build/reports/boot-smoke.ok").is_file()),
-    ("Graphics stack packaged", lambda: Path("build/rootfs/usr/lib/libwayland-server.so").exists()),
+    ("Graphics stack packaged", lambda: all(
+        Path(path).is_file() for path in (
+            "build/packages/wayland-1.26.0.kiln",
+            "build/packages/wlroots-0.19.0.kiln",
+            "build/packages/pango-1.58.2.kiln",
+        )
+    )),
     ("Labwc session passed", lambda: Path("build/reports/labwc-smoke.ok").is_file()),
     ("GNOME session passed", lambda: Path("build/reports/gnome-smoke.ok").is_file()),
 ]

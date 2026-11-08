@@ -1,4 +1,4 @@
-.PHONY: all check test audit sources kernel-config kernel glibc init packages graphics-packages gnome-backgrounds gnome-classics rootfs initramfs boot-smoke labwc-plan gnome-plan status clean
+.PHONY: all check test audit sources kernel-config kernel glibc init packages graphics-packages desktop-libs fonts xkeyboard-config labwc gnome-backgrounds gnome-classics rootfs desktop-rootfs desktop-initramfs desktop-preview initramfs boot-smoke labwc-plan gnome-plan status clean
 
 BUSYBOX ?= build/host-src/busybox-1.36.1/busybox
 
@@ -44,6 +44,18 @@ packages: build/hearth
 graphics-packages: glibc
 	python3 tools/build_graphics_packages.py --output build/packages
 
+desktop-libs: graphics-packages
+	python3 tools/build_desktop_libraries.py
+
+fonts:
+	python3 tools/build_fonts.py
+
+xkeyboard-config:
+	python3 tools/build_xkeyboard_config.py
+
+labwc: desktop-libs fonts xkeyboard-config
+	python3 tools/build_labwc.py
+
 gnome-backgrounds:
 	python3 tools/build_gnome_backgrounds.py
 
@@ -52,6 +64,15 @@ gnome-classics: gnome-backgrounds
 
 rootfs: packages
 	python3 tools/assemble_rootfs.py --root build/rootfs --packages build/packages
+
+desktop-rootfs: labwc packages
+	python3 tools/assemble_rootfs.py --root build/rootfs-desktop --packages build/packages
+
+desktop-initramfs: desktop-rootfs
+	python3 tools/pack_rootfs.py --root build/rootfs-desktop --output build/meldra-desktop-initramfs.cpio.gz
+
+desktop-preview: desktop-initramfs
+	./scripts/run-desktop-preview.sh
 
 status:
 	python3 tools/readiness.py

@@ -26,7 +26,7 @@ dependencies = ["linux-meldra"]
 name = "hearth"
 version = "0.1.0"
 status = "built"
-dependencies = ["busybox"]
+dependencies = ["busybox", "glibc"]
 
 [[package]]
 name = "kiln"
@@ -85,8 +85,8 @@ dependencies = ["glibc"]
 [[package]]
 name = "mesa"
 version = "26.2.5"
-status = "planned"
-dependencies = ["libdrm"]
+status = "built"
+dependencies = ["glibc", "libdrm", "libffi", "expat", "wayland", "wayland-protocols"]
 
 [[package]]
 name = "wayland"
@@ -103,26 +103,140 @@ dependencies = ["wayland"]
 [[package]]
 name = "libxkbcommon"
 version = "1.11.0"
-status = "planned"
-dependencies = ["wayland"]
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libevdev"
+version = "1.13.4"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "mtdev"
+version = "1.1.7"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "eudev"
+version = "3.3.0"
+status = "built"
+dependencies = ["glibc"]
 
 [[package]]
 name = "libinput"
 version = "1.30.1"
-status = "planned"
-dependencies = []
+status = "built"
+dependencies = ["eudev", "libevdev", "mtdev"]
+
+[[package]]
+name = "pixman"
+version = "0.46.4"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "seatd"
+version = "0.9.3"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libdisplay-info"
+version = "0.4.0"
+status = "built"
+dependencies = ["glibc"]
 
 [[package]]
 name = "wlroots"
-version = "0.19"
-status = "planned"
-dependencies = ["libdrm", "mesa", "wayland", "wayland-protocols", "libxkbcommon", "libinput"]
+version = "0.19.0"
+status = "built"
+dependencies = ["libdrm", "mesa", "wayland", "wayland-protocols", "libxkbcommon", "libinput", "pixman", "seatd", "libdisplay-info"]
 
 [[package]]
 name = "labwc"
-version = "0.9"
-status = "planned"
-dependencies = ["wlroots"]
+version = "0.9.1"
+status = "built"
+dependencies = ["wlroots", "libxml2", "libpng", "pango", "dejavu-fonts", "xkeyboard-config"]
+
+[[package]]
+name = "zlib"
+version = "1.3.2"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "pcre2"
+version = "10.49"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libpng"
+version = "1.6.50"
+status = "built"
+dependencies = ["glibc", "zlib"]
+
+[[package]]
+name = "libxml2"
+version = "2.14.6"
+status = "built"
+dependencies = ["glibc", "zlib"]
+
+[[package]]
+name = "freetype"
+version = "2.14.1"
+status = "built"
+dependencies = ["glibc", "zlib", "libpng"]
+
+[[package]]
+name = "glib"
+version = "2.88.4"
+status = "built"
+dependencies = ["glibc", "libffi", "pcre2", "zlib"]
+
+[[package]]
+name = "fontconfig"
+version = "2.18.2"
+status = "built"
+dependencies = ["glibc", "expat", "freetype"]
+
+[[package]]
+name = "harfbuzz"
+version = "15.1.0"
+status = "built"
+dependencies = ["glibc", "freetype", "glib"]
+
+[[package]]
+name = "fribidi"
+version = "1.0.18"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "cairo"
+version = "1.18.6"
+status = "built"
+dependencies = ["glibc", "pixman", "zlib", "libpng", "freetype", "fontconfig"]
+
+[[package]]
+name = "pango"
+version = "1.58.2"
+status = "built"
+dependencies = ["glibc", "glib", "harfbuzz", "fribidi", "cairo", "fontconfig", "freetype"]
+
+[[package]]
+name = "dejavu-fonts"
+version = "2.37"
+status = "built"
+dependencies = []
+
+[[package]]
+name = "xkeyboard-config"
+version = "2.49"
+status = "built"
+dependencies = []
 
 [[package]]
 name = "meldra-labwc"
