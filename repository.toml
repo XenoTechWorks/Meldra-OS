@@ -285,3 +285,105 @@ name = "elogind"
 version = "257.16"
 status = "built"
 dependencies = ["glibc", "libcap", "eudev", "dbus", "util-linux"]
+
+[[package]]
+name = "at-spi2-core"
+version = "2.62.1"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "dbus", "expat", "libxml2"]
+
+[[package]]
+name = "colord"
+version = "1.4.8"
+status = "built"
+dependencies = ["glibc", "glib", "lcms2", "pcre2", "libffi", "zlib", "sqlite", "libgusb", "libgudev"]
+
+[[package]]
+name = "gdk-pixbuf"
+version = "2.44.8"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libpng"]
+
+[[package]]
+name = "graphene"
+version = "1.10.8"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib"]
+
+[[package]]
+name = "gsettings-desktop-schemas"
+version = "50.1"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib"]
+
+[[package]]
+name = "gtk"
+version = "4.22.5"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "pango", "harfbuzz", "fribidi", "cairo", "pixman", "freetype", "fontconfig", "libpng", "libtiff", "libjpeg-turbo", "gdk-pixbuf", "graphene", "libepoxy", "libxkbcommon", "wayland", "wayland-protocols", "mesa", "libdrm", "expat", "libxml2"]
+
+[[package]]
+name = "json-glib"
+version = "1.10.8"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib"]
+
+[[package]]
+name = "lcms2"
+version = "2.17"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libei"
+version = "1.5.0"
+status = "built"
+dependencies = ["glibc", "libevdev"]
+
+[[package]]
+name = "libepoxy"
+version = "1.5.10"
+status = "built"
+dependencies = ["glibc", "mesa", "libdrm", "wayland", "expat", "libffi"]
+
+[[package]]
+name = "libgudev"
+version = "238"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "eudev"]
+
+[[package]]
+name = "libgusb"
+version = "0.4.9"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libusb", "json-glib"]
+
+[[package]]
+name = "libjpeg-turbo"
+version = "3.2.1"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libseccomp"
+version = "2.6.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libtiff"
+version = "4.7.2"
+status = "built"
+dependencies = ["glibc", "zlib", "libjpeg-turbo"]
+
+[[package]]
+name = "libusb"
+version = "1.0.29"
+status = "built"
+dependencies = ["glibc", "eudev"]
+
+[[package]]
+name = "sqlite"
+version = "3.54.1"
+status = "built"
+dependencies = ["glibc", "zlib"]

@@ -101,6 +101,29 @@ def introspection_cross_file(original):
     return make
 
 
+def meson_data_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Meson package with no shared library (schemas, data files): no ELF check, `expect` must exist."""
+    original = desktop.cross_file
+    if pkg.introspect:
+        desktop.cross_file = introspection_cross_file(original)
+    try:
+        unit = work / pkg.name
+        unit.mkdir()
+        upstream = source(lock, cache, unit / "source")
+        sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+        cross = desktop.cross_file(unit, sysroot)
+        build_dir, stage = unit / "build", unit / "package/root"
+        subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), "--prefix=/usr",
+                        "--cross-file", str(cross), *pkg.options], check=True)
+        subprocess.run([*desktop.MESON, "compile", "-C", str(build_dir)], check=True)
+        subprocess.run([*desktop.MESON, "install", "-C", str(build_dir), "--destdir", str(stage)], check=True)
+        if not (stage / pkg.pattern).exists():
+            raise RuntimeError(f"{pkg.name}: expected file not installed: {pkg.pattern}")
+        build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+    finally:
+        desktop.cross_file = original
+
+
 def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     unit = work / pkg.name
     unit.mkdir()
@@ -192,9 +215,9 @@ PACKAGES = [
         pattern="libatspi.so.0.*",
     ),
     Package(
-        "gsettings-desktop-schemas", ("glibc", "glib", "libffi", "pcre2", "zlib"), introspect=True,
-        options=("-Dintrospection=true",),
-        pattern=None,
+        "gsettings-desktop-schemas", ("glibc", "glib", "libffi", "pcre2", "zlib"), kind="data",
+        introspect=True, options=("-Dintrospection=true",),
+        pattern="usr/share/pkgconfig/gsettings-desktop-schemas.pc",
     ),
     Package(
         "json-glib", ("glibc", "glib", "libffi", "pcre2", "zlib"), introspect=True,
@@ -439,7 +462,9 @@ def main() -> int:
                     continue
                 print(f"==> {pkg.name} {desktop.VERSIONS[pkg.name]}", flush=True)
                 lock = pin(lock_data, pkg.name)
-                if pkg.kind == "cmake":
+                if pkg.kind == "data":
+                    meson_data_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.kind == "cmake":
                     cmake_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.kind == "autotools":
                     desktop.build_autotools(lock, pkg.name, args.cache, work, args.output,
