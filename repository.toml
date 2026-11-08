@@ -261,3 +261,27 @@ name = "meldra-gnome"
 version = "0.1.0"
 status = "planned"
 dependencies = ["meldra-base", "gnome-backgrounds", "gnome-classic-favorites", "gnome-shell"]
+
+[[package]]
+name = "libcap"
+version = "2.78"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "util-linux"
+version = "2.42.4"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "dbus"
+version = "1.16.2"
+status = "built"
+dependencies = ["glibc", "expat"]
+
+[[package]]
+name = "elogind"
+version = "257.16"
+status = "built"
+dependencies = ["glibc", "libcap", "eudev", "dbus", "util-linux"]

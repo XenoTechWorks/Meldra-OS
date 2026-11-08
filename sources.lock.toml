@@ -217,3 +217,39 @@ url = "https://download.gnome.org/sources/gnome-backgrounds/3.8/gnome-background
 sha256 = "226cf0d116a0d78b96c0ed865473975f9ca0e1c02a0442c6be8f1dd3c4a715b8"
 asset = "backgrounds/Sunset.png"
 
+
+[gnome.dbus]
+version = "1.16.2"
+url = "https://dbus.freedesktop.org/releases/dbus/dbus-1.16.2.tar.xz"
+sha256 = "0ba2a1a4b16afe7bceb2c07e9ce99a8c2c3508e5dec290dbb643384bd6beb7e2"
+role = "system and session message bus"
+
+[gnome.libcap]
+version = "2.78"
+url = "https://kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.78.tar.xz"
+sha256 = "0d621e562fd932ccf67b9660fb018e468a683d7b827541df27813228c996bb11"
+role = "elogind capability checks"
+
+[gnome.elogind]
+version = "257.16"
+url = "https://github.com/elogind/elogind/archive/refs/tags/v257.16.tar.gz"
+sha256 = "3c8146409bfb9daa77f272212c2b0bf0ae727c782ec87ece0d2d25e0e5bf5f4c"
+role = "logind session and seat API for Mutter, without systemd"
+
+[gnome.util_linux]
+version = "2.42.4"
+url = "https://mirrors.edge.kernel.org/pub/linux/utils/util-linux/v2.42/util-linux-2.42.4.tar.xz"
+sha256 = "fbd62a100ab7bb8746ba0661255c3c48185b1e9021507c624da01fbc696330ec"
+role = "libmount and libblkid for elogind and GNOME (libraries only)"
+
+[host_tools.jinja2]
+version = "3.1.6"
+url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl"
+sha256 = "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"
+role = "elogind build-time templates only"
+
+[host_tools.markupsafe]
+version = "3.0.3"
+url = "https://files.pythonhosted.org/packages/a9/21/9b05698b46f218fc0e118e1f8168395c65c8a2c750ae2bab54fc4bd4e0e8/markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"
+sha256 = "ccfcd093f13f0f0b7fdd0f198b90053bf7b2f02a3927a30e63f3ccc9df56b676"
+role = "jinja2 dependency, build-time only"
