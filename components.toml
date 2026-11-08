@@ -1,0 +1,38 @@
+schema_version = 1
+
+# These are design-study entries, not approved source imports. A component may
+# move to "prototype" only after an exact upstream commit and target path exist.
+
+[[component]]
+name = "openzfs-integration-study"
+origin = "https://github.com/openzfs/zfs"
+revision = "UNPINNED"
+license = "CDDL-1.0"
+target = "docs/studies/openzfs"
+owner = "unassigned"
+status = "study"
+strategy = "interface-study-only"
+notes = "Do not copy code into the kernel tree; license compatibility review required."
+
+[[component]]
+name = "freebsd-capsicum-study"
+origin = "https://git.freebsd.org/src.git"
+revision = "UNPINNED"
+license = "BSD-2-Clause"
+target = "docs/studies/capsicum"
+owner = "unassigned"
+status = "study"
+strategy = "clean-port"
+notes = "Evaluate capability-mode semantics as an opt-in Linux security feature."
+
+[[component]]
+name = "freebsd-pf-study"
+origin = "https://git.freebsd.org/src.git"
+revision = "UNPINNED"
+license = "BSD-2-Clause"
+target = "docs/studies/pf"
+owner = "unassigned"
+status = "study"
+strategy = "design-study"
+notes = "Compare policy model with nftables before any implementation decision."
+

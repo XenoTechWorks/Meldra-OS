@@ -1,0 +1,16 @@
+[profile]
+name = "meldra-base"
+description = "Bootable Meldra OS command-line system"
+
+packages = [
+  "linux-meldra",
+  "hearth",
+  "kiln",
+  "bash",
+  "coreutils",
+  "util-linux",
+  "eudev",
+  "dbus",
+  "iproute2",
+  "shadow",
+]

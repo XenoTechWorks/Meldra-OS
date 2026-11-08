@@ -1,0 +1,87 @@
+schema_version = 1
+
+[linux]
+version = "6.18.62"
+series = "6.x"
+url = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.62.tar.xz"
+sha256 = "490a7aedf1b355c565d3a6c05333ccccb5da82064eca46b590448a7099d7d651"
+support_line = "6.18 LTS"
+projected_eol = "2028-12"
+
+[host_tools.bc]
+version = "1.08.2"
+url = "https://ftp.gnu.org/gnu/bc/bc-1.08.2.tar.gz"
+sha256 = "ae470fec429775653e042015edc928d07c8c3b2fc59765172a330d3d87785f86"
+
+[host_tools.qemu]
+version = "11.1.3"
+url = "https://download.qemu.org/qemu-11.1.3.tar.xz"
+sha256 = "5a8289c7940dc77d3873c81a6c29ba3afe1446fc9d36e77fa1658cdbecb84b22"
+
+[runtime.musl]
+version = "1.2.6"
+url = "https://musl.libc.org/releases/musl-1.2.6.tar.gz"
+sha256 = "d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a"
+role = "static initramfs and recovery binaries only"
+
+[runtime.glibc]
+version = "2.44"
+url = "https://ftp.gnu.org/gnu/glibc/glibc-2.44.tar.xz"
+sha256 = "37f600f2bef3c5e8300147059568b2a2e40a7ad6ccc65ce942556d49429cc667"
+role = "primary userspace and desktop ABI"
+
+[runtime.busybox]
+version = "1.36.1"
+url = "https://busybox.net/downloads/busybox-1.36.1.tar.bz2"
+sha256 = "b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314"
+disabled_applets = ["tc"]
+disabled_reason = "BusyBox 1.36.1 tc uses CBQ UAPI removed from current kernel headers; iproute2 replaces it."
+
+[desktop.libdrm]
+version = "2.4.134"
+url = "https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz"
+sha256 = "ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95"
+
+[desktop.wayland_protocols]
+version = "1.49"
+url = "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/1.49/downloads/wayland-protocols-1.49.tar.xz"
+sha256 = "ec4c8f74942d6dff7ace8b4ce4764f0ef9ff618a935d974ea77edee2ad240b14"
+
+[desktop.wayland]
+version = "1.26.0"
+url = "https://gitlab.freedesktop.org/wayland/wayland/-/releases/1.26.0/downloads/wayland-1.26.0.tar.xz"
+sha256 = "64176eaa46e4969903e286f8e5ef8331affc17fdf03ac9b58381d2b23162b7a3"
+
+[desktop.libffi]
+version = "3.8.0"
+url = "https://github.com/libffi/libffi/releases/download/v3.8.0/libffi-3.8.0.tar.gz"
+sha256 = "7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4"
+
+[desktop.expat]
+version = "2.10.0"
+url = "https://github.com/libexpat/libexpat/releases/download/R_2_10_0/expat-2.10.0.tar.xz"
+sha256 = "c624ba2998fc65df1163a49641ff3f9ab73138b11641d92c86bee0fb01b1bc7f"
+
+[desktop.gnome_backgrounds]
+version = "50.0"
+url = "https://download.gnome.org/sources/gnome-backgrounds/50/gnome-backgrounds-50.0.tar.xz"
+sha256 = "1acdba7acb4f34c7321febc6273444344fd55fd593611d446de70860183b52b8"
+
+[desktop.gnome_backgrounds_aqua]
+version = "2.12.3.1"
+url = "https://download.gnome.org/sources/gnome-backgrounds/2.12/gnome-backgrounds-2.12.3.1.tar.bz2"
+sha256 = "52061b76915a1584c3dffbefa50c17e165460d93a50b9765d2e67b50b2c47e76"
+asset = "branded/GNOME-Aqua.jpg"
+
+[desktop.gnome_backgrounds_curves]
+version = "2.16.2"
+url = "https://download.gnome.org/sources/gnome-backgrounds/2.16/gnome-backgrounds-2.16.2.tar.bz2"
+sha256 = "ed5a97b18dca423c8af26d9c7f1ee50d12c71bbd159313c2ba30b317030f5bb1"
+asset = "branded/GNOME-Curves.png"
+
+[desktop.gnome_backgrounds_sunset]
+version = "3.8.1"
+url = "https://download.gnome.org/sources/gnome-backgrounds/3.8/gnome-backgrounds-3.8.1.tar.xz"
+sha256 = "226cf0d116a0d78b96c0ed865473975f9ca0e1c02a0442c6be8f1dd3c4a715b8"
+asset = "backgrounds/Sunset.png"
+

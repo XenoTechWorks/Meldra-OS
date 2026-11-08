@@ -1,0 +1,4 @@
+# Recovery shell for the development initramfs. Installed systems will use a
+# proper getty plus authenticated login from the base-system package.
+command=/bin/sh
+respawn=yes

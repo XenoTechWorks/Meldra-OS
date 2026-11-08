@@ -1,0 +1,149 @@
+schema_version = 1
+
+# Dependency intent for the Meldra repository. Versions become mandatory when
+# a recipe moves from planned to buildable; no host libraries may be copied
+# into an image as a substitute for a target build.
+
+[[package]]
+name = "linux-meldra"
+version = "6.18.62"
+status = "built"
+dependencies = []
+
+[[package]]
+name = "busybox"
+version = "1.36.1"
+status = "built"
+dependencies = []
+
+[[package]]
+name = "glibc"
+version = "2.44"
+status = "built"
+dependencies = ["linux-meldra"]
+
+[[package]]
+name = "hearth"
+version = "0.1.0"
+status = "built"
+dependencies = ["busybox"]
+
+[[package]]
+name = "kiln"
+version = "0.1.0"
+status = "built"
+dependencies = ["python"]
+
+[[package]]
+name = "python"
+version = "3.13"
+status = "planned"
+dependencies = []
+
+[[package]]
+name = "meldra-base"
+version = "0.1.0"
+status = "planned"
+dependencies = ["linux-meldra", "glibc", "hearth", "kiln"]
+
+[[package]]
+name = "meldra-wallpapers"
+version = "0.1.0"
+status = "built"
+dependencies = []
+
+[[package]]
+name = "gnome-backgrounds"
+version = "50.0"
+status = "built"
+dependencies = []
+
+[[package]]
+name = "gnome-classic-favorites"
+version = "1.0.0"
+status = "built"
+dependencies = ["gnome-backgrounds"]
+
+[[package]]
+name = "libdrm"
+version = "2.4.134"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libffi"
+version = "3.8.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "expat"
+version = "2.10.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "mesa"
+version = "26.2.5"
+status = "planned"
+dependencies = ["libdrm"]
+
+[[package]]
+name = "wayland"
+version = "1.26.0"
+status = "built"
+dependencies = ["glibc", "libffi", "expat"]
+
+[[package]]
+name = "wayland-protocols"
+version = "1.49"
+status = "built"
+dependencies = ["wayland"]
+
+[[package]]
+name = "libxkbcommon"
+version = "1.11.0"
+status = "planned"
+dependencies = ["wayland"]
+
+[[package]]
+name = "libinput"
+version = "1.30.1"
+status = "planned"
+dependencies = []
+
+[[package]]
+name = "wlroots"
+version = "0.19"
+status = "planned"
+dependencies = ["libdrm", "mesa", "wayland", "wayland-protocols", "libxkbcommon", "libinput"]
+
+[[package]]
+name = "labwc"
+version = "0.9"
+status = "planned"
+dependencies = ["wlroots"]
+
+[[package]]
+name = "meldra-labwc"
+version = "0.1.0"
+status = "planned"
+dependencies = ["meldra-base", "gnome-backgrounds", "gnome-classic-favorites", "labwc"]
+
+[[package]]
+name = "mutter"
+version = "50"
+status = "planned"
+dependencies = ["mesa", "wayland", "wayland-protocols", "libxkbcommon", "libinput"]
+
+[[package]]
+name = "gnome-shell"
+version = "50"
+status = "planned"
+dependencies = ["mutter"]
+
+[[package]]
+name = "meldra-gnome"
+version = "0.1.0"
+status = "planned"
+dependencies = ["meldra-base", "gnome-backgrounds", "gnome-classic-favorites", "gnome-shell"]

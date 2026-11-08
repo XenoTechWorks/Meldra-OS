@@ -1,0 +1,25 @@
+[profile]
+name = "meldra-gnome"
+description = "Default full Meldra OS desktop"
+extends = "meldra-base"
+session = "gnome"
+display_manager = "gdm"
+
+packages = [
+  "gnome-backgrounds",
+  "gnome-classic-favorites",
+  "gdm",
+  "gnome-shell",
+  "gnome-session",
+  "gnome-control-center",
+  "gnome-settings-daemon",
+  "mutter",
+  "nautilus",
+  "xdg-desktop-portal-gnome",
+  "pipewire",
+  "wireplumber",
+  "networkmanager",
+  "polkit",
+  "upower",
+  "accountsservice",
+]

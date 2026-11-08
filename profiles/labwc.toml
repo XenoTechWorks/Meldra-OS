@@ -1,0 +1,22 @@
+[profile]
+name = "meldra-labwc"
+description = "Lightweight Wayland window-manager session"
+extends = "meldra-base"
+session = "labwc"
+display_manager = "greetd"
+
+packages = [
+  "gnome-backgrounds",
+  "gnome-classic-favorites",
+  "greetd",
+  "labwc",
+  "waybar",
+  "foot",
+  "fuzzel",
+  "swaybg",
+  "xdg-desktop-portal-wlr",
+  "pipewire",
+  "wireplumber",
+  "networkmanager",
+  "polkit",
+]

@@ -1,0 +1,2 @@
+command=/usr/bin/dbus-daemon --system --nofork
+respawn=yes

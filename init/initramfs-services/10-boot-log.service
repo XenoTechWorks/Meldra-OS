@@ -1,0 +1,2 @@
+command=/bin/sh -c 'echo "Meldra OS userspace is alive" > /dev/console; sleep 86400'
+respawn=no
