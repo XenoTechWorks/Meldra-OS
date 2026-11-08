@@ -391,3 +391,39 @@ version = "2.7.0"
 url = "https://duktape.org/duktape-2.7.0.tar.xz"
 sha256 = "90f8d2fa8b5567c6899830ddef2c03f3c27960b11aca222fa17aa7ac613c2890"
 role = "JavaScript engine for polkit rules; checksum matches Debian's orig tarball"
+
+[gnome.evolution_data_server]
+version = "3.58.3"
+url = "https://download.gnome.org/sources/evolution-data-server/3.58/evolution-data-server-3.58.3.tar.xz"
+sha256 = "da136d1190d9e8b09499452f6058e24eee6b77f441a8c769f74a52451bf379f1"
+role = "calendar backend library the Shell requires (libecal, libedataserver)"
+
+[gnome.libical]
+version = "4.0.7"
+url = "https://github.com/libical/libical/releases/download/v4.0.7/libical-4.0.7.tar.gz"
+sha256 = "47c05bc96e41416578cf1803bb2ba3f8d292cb17d5ac2fca539dee922bae8a94"
+role = "calendar parsing (Evolution Data Server)"
+
+[gnome.libpsl]
+version = "0.23.3"
+url = "https://github.com/rockdaboot/libpsl/releases/download/0.23.3/libpsl-0.23.3.tar.gz"
+sha256 = "93941f85a1e7bd593fa94f299233cb5dfc91cd144fd9a78a6ceb75001c5b03be"
+role = "public suffix list (libsoup)"
+
+[gnome.nghttp2]
+version = "1.71.0"
+url = "https://github.com/nghttp2/nghttp2/releases/download/v1.71.0/nghttp2-1.71.0.tar.xz"
+sha256 = "c0f55121d88650e4b9227aec28cebaf664d2417ca60fe70be0f8d38829f52116"
+role = "HTTP/2 (libsoup)"
+
+[gnome.libsecret]
+version = "0.21.8.2"
+url = "https://download.gnome.org/sources/libsecret/0.21/libsecret-0.21.8.2.tar.xz"
+sha256 = "142948339c5b971d8f6a8c7099521f6fd319b6fe73d2694b4e6d3310ed28b6e6"
+role = "secret storage API (Evolution Data Server)"
+
+[gnome.libsoup]
+version = "3.6.6"
+url = "https://download.gnome.org/sources/libsoup/3.6/libsoup-3.6.6.tar.xz"
+sha256 = "51ed0ae06f9d5a40f401ff459e2e5f652f9a510b7730e1359ee66d14d4872740"
+role = "HTTP library (Evolution Data Server)"

@@ -139,10 +139,29 @@ def autotools_data_build(pkg: Package, lock: dict, cache: Path, work: Path, outp
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
+def native_libical_generator(upstream: Path, work: Path) -> Path:
+    """libical-glib generates its sources with a tool that must run on the build machine."""
+    native = work / "libical-native"
+    subprocess.run(["cmake", "-S", str(upstream), "-B", str(native), "-G", "Ninja",
+                    f"-DCMAKE_INSTALL_PREFIX={native}/prefix", "-DLIBICAL_GLIB=ON",
+                    "-DLIBICAL_GOBJECT_INTROSPECTION=OFF", "-DLIBICAL_GLIB_VAPI=OFF",
+                    "-DLIBICAL_GLIB_BUILD_DOCS=OFF", "-DLIBICAL_BUILD_DOCS=OFF",
+                    "-DLIBICAL_BUILD_TESTING=OFF", "-DLIBICAL_BUILD_EXAMPLES=OFF",
+                    "-DLIBICAL_JAVA_BINDINGS=OFF", "-DLIBICAL_CXX_BINDINGS=OFF",
+                    "-DCMAKE_BUILD_TYPE=Release"], check=True)
+    subprocess.run(["cmake", "--build", str(native)], check=True)
+    subprocess.run(["cmake", "--install", str(native)], check=True, stdout=subprocess.DEVNULL)
+    exported = next((native / "prefix").rglob("IcalGlibSrcGenerator.cmake"))
+    return exported
+
+
 def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     unit = work / pkg.name
     unit.mkdir()
     upstream = source(lock, cache, unit / "source")
+    extra = ()
+    if pkg.name == "libical":
+        extra = (f"-DIMPORT_ICAL_GLIB_SRC_GENERATOR={native_libical_generator(upstream, unit)}",)
     sysroot = desktop.make_sysroot(output, unit, pkg.deps)
     root = sysroot.resolve()
     build_dir, stage = unit / "build", unit / "package/root"
@@ -156,10 +175,11 @@ def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path)
          f"-DCMAKE_EXE_LINKER_FLAGS=--sysroot={root} -Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
          f"-DCMAKE_SHARED_LINKER_FLAGS=--sysroot={root} -Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
          f"-DCMAKE_SYSROOT={root}", f"-DCMAKE_FIND_ROOT_PATH={root}",
-         "-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER", "-DCMAKE_INSTALL_PREFIX=/usr",
-         "-DCMAKE_INSTALL_LIBDIR=lib", "-DCMAKE_BUILD_TYPE=Release", *pkg.options],
+         "-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER", "-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY",
+         "-DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY", "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY", "-DCMAKE_INSTALL_PREFIX=/usr",
+         "-DCMAKE_INSTALL_LIBDIR=lib", "-DCMAKE_BUILD_TYPE=Release", *pkg.options, *extra],
         env=env, check=True)
-    subprocess.run(["cmake", "--build", str(build_dir), "-j8"], env=env, check=True)
+    subprocess.run(["cmake", "--build", str(build_dir)], env=env, check=True)
     subprocess.run(["cmake", "--install", str(build_dir)], env={**env, "DESTDIR": str(stage)}, check=True)
     library = next((stage / "usr/lib").glob(pkg.pattern), None)
     if library is None:
@@ -312,6 +332,38 @@ PACKAGES = [
                  "-Dintrospection=true", "-Dgettext=false", "-Dexamples=false",
                  "-Dpolkitd_user=root", "--sysconfdir=/etc", "--localstatedir=/var"),
         pattern="libpolkit-agent-1.so.0.*",
+    ),
+    Package(
+        "libpsl", ("glibc",),
+        options=("-Druntime=no", "-Dbuiltin=false", "-Dtests=false", "-Ddocs=false"),
+        pattern="libpsl.so.5.*",
+    ),
+    Package(
+        "nghttp2", ("glibc",), kind="autotools",
+        options=("--enable-lib-only", "--disable-static", "--enable-shared", "--disable-python-bindings",
+                 "--without-libxml2", "--without-jansson", "--without-systemd"),
+        pattern="libnghttp2.so.14.*",
+    ),
+    Package(
+        "libical", ("glibc", "glibc", "glib", "libffi", "pcre2", "zlib", "libxml2", "sqlite"), kind="cmake",
+        options=("-DLIBICAL_GLIB=ON", "-DLIBICAL_GOBJECT_INTROSPECTION=OFF", "-DLIBICAL_BUILD_DOCS=OFF",
+                 "-DLIBICAL_GLIB_BUILD_DOCS=OFF", "-DLIBICAL_BUILD_TESTING=OFF",
+                 "-DLIBICAL_BUILD_EXAMPLES=OFF", "-DLIBICAL_GLIB_VAPI=OFF", "-DLIBICAL_STATIC=OFF",
+                 "-DUSE_BUILTIN_TZDATA=ON", "-DLIBICAL_JAVA_BINDINGS=OFF", "-DLIBICAL_CXX_BINDINGS=OFF"),
+        pattern="libical.so.4.*",
+    ),
+    Package(
+        "libsecret", ("glibc", "glibc", "glib", "libffi", "pcre2", "zlib"), introspect=True,
+        options=("-Dcrypto=disabled", "-Dmanpage=false", "-Dgtk_doc=false", "-Dvapi=false",
+                 "-Dintrospection=true", "-Dbash_completion=disabled", "-Dtpm2=false"),
+        pattern="libsecret-1.so.0.*",
+    ),
+    Package(
+        "libsoup", ("glibc", "glibc", "glib", "libffi", "pcre2", "zlib", "libpsl", "nghttp2", "sqlite", "libxml2"), introspect=True,
+        options=("-Dgssapi=disabled", "-Dntlm=disabled", "-Dbrotli=disabled", "-Dsysprof=disabled",
+                 "-Dtls_check=false", "-Dvapi=disabled", "-Ddocs=disabled", "-Dtests=false",
+                 "-Dintrospection=enabled", "-Dpkcs11_tests=disabled", "-Dautobahn=disabled"),
+        pattern="libsoup-3.0.so.0.*",
     ),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
@@ -466,10 +518,13 @@ def gentle_environment(work: Path, jobs: int) -> None:
     bin_dir.mkdir()
     ninja = next(p for p in os.environ["PATH"].split(os.pathsep) if (Path(p) / "ninja").is_file())
     make = next(p for p in os.environ["PATH"].split(os.pathsep) if (Path(p) / "make").is_file())
-    (bin_dir / "ninja").write_text(f'#!/bin/sh\nexec {ninja}/ninja -j{jobs} "$@"\n')
-    (bin_dir / "make").write_text(
-        "#!/bin/sh\nargs=\nfor a in \"$@\"; do\n  case \"$a\" in -j*) ;; *) args=\"$args '$a'\" ;; esac\ndone\n"
-        f'eval exec {make}/make -j{jobs} "$args"\n')
+    # Drop any -jN / -j N the caller passes (cmake --build, scripts that hard-code -j8): the cap wins.
+    strip = (
+        "#!/bin/sh\nargs=\nskip=0\nfor a in \"$@\"; do\n"
+        "  if [ \"$skip\" = 1 ]; then skip=0; case \"$a\" in [0-9]*) continue ;; esac; fi\n"
+        "  case \"$a\" in -j) skip=1 ;; -j*) ;; *) args=\"$args '$a'\" ;; esac\ndone\n")
+    (bin_dir / "ninja").write_text(strip + f'eval exec {ninja}/ninja -j{jobs} "$args"\n')
+    (bin_dir / "make").write_text(strip + f'eval exec {make}/make -j{jobs} "$args"\n')
     for name in ("ninja", "make"):
         (bin_dir / name).chmod(0o755)
     os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
