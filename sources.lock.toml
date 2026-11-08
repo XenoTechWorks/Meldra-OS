@@ -427,3 +427,15 @@ version = "3.6.6"
 url = "https://download.gnome.org/sources/libsoup/3.6/libsoup-3.6.6.tar.xz"
 sha256 = "51ed0ae06f9d5a40f401ff459e2e5f652f9a510b7730e1359ee66d14d4872740"
 role = "HTTP library (Evolution Data Server)"
+
+[gnome.nspr]
+version = "4.40"
+url = "https://ftp.mozilla.org/pub/nspr/releases/v4.40/src/nspr-4.40.tar.gz"
+sha256 = "c0c1884c627f3db7a783f7c7314c695226b2043696791d15519e7e0578c19bdc"
+role = "portable runtime for NSS; checksum from Mozilla's SHA256SUMS"
+
+[gnome.nss]
+version = "3.133"
+url = "https://ftp.mozilla.org/pub/security/nss/releases/NSS_3_133_RTM/src/nss-3.133.tar.gz"
+sha256 = "4d752526b9846a1d962588cfbd09b7cc2a4f6a4effbd9157d58a30e8a2573065"
+role = "crypto library Evolution Data Server's Camel requires; checksum from Mozilla's SHA256SUMS"
