@@ -253,3 +253,63 @@ version = "3.0.3"
 url = "https://files.pythonhosted.org/packages/a9/21/9b05698b46f218fc0e118e1f8168395c65c8a2c750ae2bab54fc4bd4e0e8/markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"
 sha256 = "ccfcd093f13f0f0b7fdd0f198b90053bf7b2f02a3927a30e63f3ccc9df56b676"
 role = "jinja2 dependency, build-time only"
+
+[gnome.gobject_introspection]
+version = "1.86.0"
+url = "https://download.gnome.org/sources/gobject-introspection/1.86/gobject-introspection-1.86.0.tar.xz"
+sha256 = "920d1a3fcedeadc32acff95c2e203b319039dd4b4a08dd1a2dfd283d19c0b9ae"
+
+[gnome.graphene]
+version = "1.10.8"
+url = "https://download.gnome.org/sources/graphene/1.10/graphene-1.10.8.tar.xz"
+sha256 = "a37bb0e78a419dcbeaa9c7027bcff52f5ec2367c25ec859da31dfde2928f279a"
+
+[gnome.gdk_pixbuf]
+version = "2.44.8"
+url = "https://download.gnome.org/sources/gdk-pixbuf/2.44/gdk-pixbuf-2.44.8.tar.xz"
+sha256 = "919f529512961a12e81cd4b4b466a48c3933469e7f9a310c6513cd4fb252ba3c"
+
+[gnome.libepoxy]
+version = "1.5.10"
+url = "https://download.gnome.org/sources/libepoxy/1.5/libepoxy-1.5.10.tar.xz"
+sha256 = "072cda4b59dd098bba8c2363a6247299db1fa89411dc221c8b81b8ee8192e623"
+
+[gnome.at_spi2_core]
+version = "2.62.1"
+url = "https://download.gnome.org/sources/at-spi2-core/2.62/at-spi2-core-2.62.1.tar.xz"
+sha256 = "cca6b6a86e4389d89b370288761ce2385ddeceb10c4412da78689bc30c88af2d"
+
+[gnome.libgudev]
+version = "238"
+url = "https://download.gnome.org/sources/libgudev/238/libgudev-238.tar.xz"
+sha256 = "61266ab1afc9d73dbc60a8b2af73e99d2fdff47d99544d085760e4fa667b5dd1"
+
+[gnome.gsettings_desktop_schemas]
+version = "50.1"
+url = "https://download.gnome.org/sources/gsettings-desktop-schemas/50/gsettings-desktop-schemas-50.1.tar.xz"
+sha256 = "0a2aa25082672585d16fcdab61c7b0e33f035fb87476505c794f29565afa485b"
+
+[gnome.gnome_desktop]
+version = "44.5"
+url = "https://download.gnome.org/sources/gnome-desktop/44/gnome-desktop-44.5.tar.xz"
+sha256 = "20e0995a6e3a03e8c1026c5a27bc3f45e69ffcc392ad743dcab6107a541d232f"
+
+[gnome.gtk]
+version = "4.22.5"
+url = "https://download.gnome.org/sources/gtk/4.22/gtk-4.22.5.tar.xz"
+sha256 = "7fd725deb2cb3f8dc218ad862c5056ff8548f49d3b0e4081796e444c22d19686"
+
+[gnome.gjs]
+version = "1.88.1"
+url = "https://download.gnome.org/sources/gjs/1.88/gjs-1.88.1.tar.xz"
+sha256 = "767bab80e665d672cb00563c25f0b392a9ec8c2996ed1d4454c698b4c2f0a3d9"
+
+[gnome.mutter]
+version = "50.6"
+url = "https://download.gnome.org/sources/mutter/50/mutter-50.6.tar.xz"
+sha256 = "abed98ed9c46934a0f761ba8c28a055305b99b4855e44c8273f881da7189bc9c"
+
+[gnome.gnome_shell]
+version = "50.6"
+url = "https://download.gnome.org/sources/gnome-shell/50/gnome-shell-50.6.tar.xz"
+sha256 = "e9ad99948c7f50eb4f6b307b241b5e60ad8383aeddf908139e4601dc46637ae2"

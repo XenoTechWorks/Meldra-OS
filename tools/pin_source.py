@@ -24,6 +24,7 @@ def main() -> int:
     parser.add_argument("version")
     parser.add_argument("url")
     parser.add_argument("--role", default="")
+    parser.add_argument("--sha256", help="expected checksum from the project; the pin fails on a mismatch")
     parser.add_argument("--lock", type=Path, default=Path("sources.lock.toml"))
     parser.add_argument("--cache", type=Path, default=Path("build/downloads"))
     args = parser.parse_args()
@@ -48,6 +49,10 @@ def main() -> int:
                 out.write(chunk)
         part.replace(archive)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    if args.sha256 and digest != args.sha256.lower():
+        archive.unlink()
+        print(f"checksum mismatch for {args.url}: expected {args.sha256}, got {digest}", file=sys.stderr)
+        return 1
     with args.lock.open("a", encoding="utf-8") as stream:
         stream.write(f'\n[{section}.{key}]\nversion = "{args.version}"\nurl = "{args.url}"\nsha256 = "{digest}"\n')
         if args.role:

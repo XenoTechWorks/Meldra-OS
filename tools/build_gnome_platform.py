@@ -28,7 +28,9 @@ import tools.build_desktop_libraries as desktop
 
 
 class Package:
-    def __init__(self, name, deps, kind="meson", options=(), pattern=None, post=None, env=None):
+    def __init__(self, name, deps, kind="meson", options=(), pattern=None, post=None, env=None,
+                 introspect=False):
+        self.introspect = introspect
         self.name = name
         self.deps = tuple(deps)
         self.kind = kind
@@ -58,7 +60,46 @@ def libcap_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
+def introspection_cross_file(original):
+    """Wrap desktop.cross_file so meson finds the host g-ir-scanner and can run target binaries."""
+    def make(work: Path, sysroot: Path) -> Path:
+        path = original(work, sysroot)
+        text = path.read_text(encoding="utf-8")
+        gi = HOST_GI.resolve()
+        root = sysroot.resolve()
+        ldd = work / "cross-ldd"
+        loader = root / "lib64/ld-linux-x86-64.so.2"
+        library_path = f"{root}/lib64:{root}/usr/lib64:{root}/usr/lib"
+        ldd.write_text(f'#!/bin/sh\nexec "{loader}" --library-path "{library_path}" --list "$@"\n')
+        ldd.chmod(0o755)
+        text = text.replace("[binaries]\n", "[binaries]\n"
+                            f"g-ir-scanner = '{gi}/bin/g-ir-scanner'\n"
+                            f"g-ir-compiler = '{gi}/bin/g-ir-compiler'\n"
+                            f"g-ir-generate = '{gi}/bin/g-ir-generate'\n", 1)
+        # The host .pc requires the host's glib; meson only reads its variables here.
+        shim = work / "gi-pc"
+        shim.mkdir(exist_ok=True)
+        lines = [line for line in (gi / "lib/pkgconfig/gobject-introspection-1.0.pc").read_text().splitlines()
+                 if not line.startswith(("Requires", "Libs", "Cflags"))]
+        (shim / "gobject-introspection-1.0.pc").write_text("\n".join(lines) + "\nLibs:\nCflags:\n")
+        text = text.replace("pkg_config_libdir = [", f"pkg_config_libdir = ['{shim}', ", 1)
+        path.write_text(text, encoding="utf-8")
+        os.environ["GI_CROSS_LAUNCHER"] = (
+            f"{loader} --library-path {library_path}")
+        os.environ["PATH"] = f"{work}:{os.environ['PATH']}"  # cross-ldd first
+        return path
+    return make
+
+
 PACKAGES = [
+    Package(
+        "glib", ("glibc", "libffi", "pcre2", "zlib"), introspect=True,
+        options=("-Dtests=false", "-Dinstalled_tests=false", "-Dselinux=disabled", "-Dxattr=false",
+                 "-Dlibmount=disabled", "-Dman-pages=disabled", "-Ddocumentation=false",
+                 "-Dgtk_doc=false", "-Dnls=disabled", "-Dsysprof=disabled", "-Ddtrace=false",
+                 "-Dsystemtap=false", "-Dintrospection=enabled"),
+        pattern="libglib-2.0.so.0.*",
+    ),
     Package("libcap", ("glibc",), kind="custom"),
     Package(
         "dbus", ("glibc", "expat"),
@@ -88,7 +129,38 @@ PACKAGES = [
 ]
 
 
+HOST_GI = Path("build/host-tools/gobject-introspection")
+
+
+def build_host_gi(lock: dict, cache: Path, work: Path) -> Path:
+    """Native g-ir-scanner and g-ir-compiler, used to generate typelibs for target libraries.
+
+    The scanner runs on the host and runs the target's dumper programs through the loader
+    wrapper in the cross file, which is the usual way to introspect in a cross build.
+    """
+    prefix = HOST_GI.resolve()
+    if (prefix / "bin/g-ir-scanner").is_file():
+        return prefix
+    upstream = source(lock, cache, work / "host-gi-source")
+    build_dir = work / "host-gi-build"
+    subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), f"--prefix={prefix}",
+                    "--libdir=lib", "-Ddoctool=disabled", "-Dgtk_doc=false", "-Dtests=false",
+                    "-Dcairo=disabled"], check=True)
+    subprocess.run([*desktop.MESON, "install", "-C", str(build_dir)], check=True)
+    return prefix
+
+
 def meson_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    original = desktop.cross_file
+    if pkg.introspect:
+        desktop.cross_file = introspection_cross_file(original)
+    try:
+        desktop.build_meson(lock, pkg.name, cache, work, output, pkg.deps, pkg.options, pkg.pattern)
+    finally:
+        desktop.cross_file = original
+
+
+def _unused(pkg, lock, cache, work, output):
     desktop.build_meson(lock, pkg.name, cache, work, output, pkg.deps, pkg.options, pkg.pattern)
 
 
@@ -106,14 +178,15 @@ def main() -> int:
     lock_data = tomllib.loads(args.lock.read_text(encoding="utf-8"))
     locks = lock_data["gnome"]
     for pkg in PACKAGES:
-        desktop.VERSIONS.setdefault(pkg.name, locks[pkg.name.replace("-", "_")]["version"])
+        desktop.VERSIONS.setdefault(pkg.name, (lock_data["desktop"] if pkg.name == "glib" else locks)[pkg.name.replace("-", "_")]["version"])
     if args.list:
         for pkg in PACKAGES:
             done = (args.output / f"{pkg.name}-{desktop.VERSIONS[pkg.name]}.kiln").is_file()
             print(f"{'built  ' if done else 'pending'} {pkg.name} {desktop.VERSIONS[pkg.name]}")
         return 0
     wanted = [p for p in PACKAGES if p.name in args.names or args.all]
-    unknown = set(args.names) - {p.name for p in PACKAGES}
+    args.names = [n for n in args.names]
+    unknown = set(args.names) - {p.name for p in PACKAGES} - {"host-gi"}
     if unknown:
         parser.error(f"unknown package(s): {', '.join(sorted(unknown))}")
     args.output.mkdir(parents=True, exist_ok=True)
@@ -128,13 +201,17 @@ def main() -> int:
                 tool_work.mkdir()
                 wheel_paths.append(str(python_wheel(lock_data["host_tools"][tool], args.cache, tool_work)))
             os.environ["PYTHONPATH"] = os.pathsep.join(wheel_paths + [os.environ.get("PYTHONPATH", "")]).rstrip(os.pathsep)
+            if "host-gi" in args.names:
+                build_host_gi(locks["gobject_introspection"], args.cache, work)
+            if any(p.introspect for p in wanted):
+                build_host_gi(locks["gobject_introspection"], args.cache, work)
             for pkg in wanted:
                 archive = args.output / f"{pkg.name}-{desktop.VERSIONS[pkg.name]}.kiln"
                 if args.all and archive.is_file():
                     print(f"using existing package {archive}")
                     continue
                 print(f"==> {pkg.name} {desktop.VERSIONS[pkg.name]}", flush=True)
-                lock = locks[pkg.name.replace("-", "_")]
+                lock = (lock_data["desktop"] if pkg.name == "glib" else locks)[pkg.name.replace("-", "_")]
                 if pkg.kind == "autotools":
                     desktop.build_autotools(lock, pkg.name, args.cache, work, args.output,
                                             pkg.deps, pkg.options, pkg.pattern)
