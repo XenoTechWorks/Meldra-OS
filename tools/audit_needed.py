@@ -26,6 +26,9 @@ def main() -> int:
                         continue
                 out = subprocess.run(["readelf", "-d", str(path)], capture_output=True, text=True).stdout
                 for needed in re.findall(r"Shared library: \[([^]]+)\]", out):
+                    if needed.startswith(("libgcc_s", "libstdc++")):
+                        print(f"{package.name}: {path.relative_to(directory)} needs undeclared GCC runtime {needed}")
+                        bad += 1
                     if needed.startswith("/"):
                         print(f"{package.name}: {path.relative_to(directory)} needs absolute path {needed}")
                         bad += 1

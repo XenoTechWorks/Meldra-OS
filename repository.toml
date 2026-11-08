@@ -495,3 +495,9 @@ name = "p11-kit"
 version = "0.26.5"
 status = "built"
 dependencies = ["glibc", "libffi", "libtasn1"]
+
+[[package]]
+name = "glycin"
+version = "2.2.6"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libseccomp", "lcms2", "fontconfig", "freetype", "expat", "libpng"]

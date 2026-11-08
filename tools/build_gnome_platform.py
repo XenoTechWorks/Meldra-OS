@@ -36,8 +36,9 @@ def pin(lock_data: dict, name: str) -> dict:
 
 class Package:
     def __init__(self, name, deps, kind="meson", options=(), pattern=None, post=None, env=None,
-                 introspect=False):
+                 introspect=False, rust=False):
         self.introspect = introspect
+        self.rust = rust
         self.name = name
         self.deps = tuple(deps)
         self.kind = kind
@@ -283,8 +284,9 @@ def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path)
         ["cmake", "-S", str(upstream), "-B", str(build_dir), "-G", "Ninja",
          "-DCMAKE_SYSTEM_NAME=Linux", "-DCMAKE_SYSTEM_PROCESSOR=x86_64",
          "-DCMAKE_C_COMPILER=gcc", f"-DCMAKE_C_FLAGS=--sysroot={root} -O2",
-         f"-DCMAKE_EXE_LINKER_FLAGS=--sysroot={root} -Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
-         f"-DCMAKE_SHARED_LINKER_FLAGS=--sysroot={root} -Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
+         f"-DCMAKE_EXE_LINKER_FLAGS=--sysroot={root} -static-libstdc++ -static-libgcc -Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
+         f"-DCMAKE_SHARED_LINKER_FLAGS=--sysroot={root} -static-libstdc++ -static-libgcc -Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
+         f"-DCMAKE_MODULE_LINKER_FLAGS=--sysroot={root} -static-libstdc++ -static-libgcc -Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
          f"-DCMAKE_SYSROOT={root}", f"-DCMAKE_FIND_ROOT_PATH={root}",
          "-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER", "-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY",
          "-DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY", "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY", "-DCMAKE_INSTALL_PREFIX=/usr",
@@ -523,6 +525,15 @@ PACKAGES = [
                  "-Dvapi=false", "-Dgtk_doc=false", "-Dsystemd=disabled", "-Dgpg_path=/usr/bin/gpg"),
         pattern="libgcr-4.so.4.*",
     ),
+    Package(
+        "glycin", ("glibc", "glib", "libffi", "pcre2", "zlib", "libseccomp", "lcms2", "fontconfig", "freetype",
+                   "expat", "libpng"),
+        introspect=True, rust=True,
+        options=("-Dglycin-loaders=true", "-Dloaders=glycin-image-rs", "-Dlibglycin=true",
+                 "-Dlibglycin-gtk4=false", "-Dintrospection=true", "-Dvapi=false", "-Dtests=false",
+                 "-Dglycin-thumbnailer=false", "-Dcapi_docs=false", "-Dlto=false"),
+        pattern="libglycin-2.so.0",
+    ),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
@@ -650,10 +661,53 @@ def build_host_wayland(lock: dict, cache: Path, work: Path) -> None:
     os.environ["PKG_CONFIG_PATH_FOR_BUILD"] = f"{prefix}/lib/pkgconfig:{prefix}/share/pkgconfig"
 
 
+RUST_TARGET = "x86_64-unknown-linux-gnu"
+
+
+def rust_cross_file(original):
+    """Wrap a cross file for projects that build with cargo.
+
+    Host and target are the same triple, so --target is what makes cargo treat the build as a cross
+    build: build scripts and proc-macros use the host linker, and target code links with the sysroot
+    through a wrapper (one executable, because cargo takes a single linker path).
+    """
+    def make(work: Path, sysroot: Path) -> Path:
+        path = original(work, sysroot)
+        root = sysroot.resolve()
+        cc = work / "target-cc"
+        # Rust links libgcc_s dynamically for unwinding, but the target has no GCC runtime library.
+        # A linker script named libgcc_s.so, searched first, resolves -lgcc_s to the static pieces.
+        static_dir = work / "gcc-static"
+        static_dir.mkdir(exist_ok=True)
+        pieces = [subprocess.run(["gcc", f"-print-file-name={name}"], capture_output=True, text=True,
+                                 check=True).stdout.strip() for name in ("libgcc.a", "libgcc_eh.a")]
+        (static_dir / "libgcc_s.so").write_text(f"GROUP ( {pieces[0]} {pieces[1]} )\n")
+        cc.write_text(
+            f'#!/bin/sh\nexec gcc --sysroot={root} -L{static_dir} -Wl,-rpath-link,{root}/usr/lib '
+            f'-Wl,-rpath-link,{root}/lib64 "$@"\n')
+        cc.chmod(0o755)
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("[binaries]\n", f"[binaries]\nrust = ['rustc', '--target', '{RUST_TARGET}', "
+                            f"'-C', 'linker={cc}']\n", 1)
+        text = text.replace("[properties]\n", f"[properties]\nrust_target = '{RUST_TARGET}'\n", 1)
+        path.write_text(text, encoding="utf-8")
+        triple = RUST_TARGET.upper().replace("-", "_")
+        os.environ[f"CARGO_TARGET_{triple}_LINKER"] = str(cc)
+        os.environ[f"CC_{RUST_TARGET.replace('-', '_')}"] = str(cc)
+        os.environ["CARGO_BUILD_JOBS"] = os.environ.get("MELDRA_JOBS", "2")
+        os.environ["PKG_CONFIG_ALLOW_CROSS"] = "1"
+        os.environ["PKG_CONFIG_SYSROOT_DIR"] = str(root)
+        os.environ["PKG_CONFIG_LIBDIR"] = f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"
+        return path
+    return make
+
+
 def meson_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     original = desktop.cross_file
+    if pkg.rust:
+        desktop.cross_file = rust_cross_file(desktop.cross_file)
     if pkg.introspect:
-        desktop.cross_file = introspection_cross_file(original)
+        desktop.cross_file = introspection_cross_file(desktop.cross_file)
     try:
         desktop.build_meson(lock, pkg.name, cache, work, output, pkg.deps, pkg.options, pkg.pattern)
     finally:
