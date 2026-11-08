@@ -313,3 +313,51 @@ sha256 = "abed98ed9c46934a0f761ba8c28a055305b99b4855e44c8273f881da7189bc9c"
 version = "50.6"
 url = "https://download.gnome.org/sources/gnome-shell/50/gnome-shell-50.6.tar.xz"
 sha256 = "e9ad99948c7f50eb4f6b307b241b5e60ad8383aeddf908139e4601dc46637ae2"
+
+[gnome.lcms2]
+version = "2.17"
+url = "https://github.com/mm2/Little-CMS/releases/download/lcms2.17/lcms2-2.17.tar.gz"
+sha256 = "d11af569e42a1baa1650d20ad61d12e41af4fead4aa7964a01f93b08b53ab074"
+role = "colour management (Mutter, colord)"
+
+[gnome.libei]
+version = "1.5.0"
+url = "https://gitlab.freedesktop.org/libinput/libei/-/archive/1.5.0/libei-1.5.0.tar.gz"
+sha256 = "7687c3bbcff89ff331c5db72e0a5cce6bcae382e3c238d6f7019a6bc71d88e43"
+role = "emulated input for Mutter"
+
+[gnome.libseccomp]
+version = "2.6.0"
+url = "https://github.com/seccomp/libseccomp/releases/download/v2.6.0/libseccomp-2.6.0.tar.gz"
+sha256 = "83b6085232d1588c379dc9b9cae47bb37407cf262e6e74993c61ba72d2a784dc"
+role = "sandbox filters (glycin, gnome-desktop thumbnailing)"
+
+[gnome.colord]
+version = "1.4.8"
+url = "https://www.freedesktop.org/software/colord/releases/colord-1.4.8.tar.xz"
+sha256 = "21500bd68975312a7f0f3ce6019d9f75f42aacaa75ca7115ec720b5445406896"
+role = "colour profile library for Mutter (daemon off)"
+
+[gnome.sqlite]
+version = "3.54.1"
+url = "https://www.sqlite.org/2026/sqlite-autoconf-3540100.tar.gz"
+sha256 = "926ef8d3eab93fbf6e06011901273eec076b25594a4e1cdadd50c987f4f6d64e"
+role = "database library (colord, evolution-data-server)"
+
+[gnome.json_glib]
+version = "1.10.8"
+url = "https://download.gnome.org/sources/json-glib/1.10/json-glib-1.10.8.tar.xz"
+sha256 = "55c5c141a564245b8f8fbe7698663c87a45a7333c2a2c56f06f811ab73b212dd"
+role = "JSON for libgusb"
+
+[gnome.libusb]
+version = "1.0.29"
+url = "https://github.com/libusb/libusb/releases/download/v1.0.29/libusb-1.0.29.tar.bz2"
+sha256 = "5977fc950f8d1395ccea9bd48c06b3f808fd3c2c961b44b0c2e6e29fc3a70a85"
+role = "USB access for libgusb"
+
+[gnome.libgusb]
+version = "0.4.9"
+url = "https://github.com/hughsie/libgusb/releases/download/0.4.9/libgusb-0.4.9.tar.xz"
+sha256 = "9df5ef301d6a4b361002aa52cce1165a87a89744055879bdbab31e7e86f1e846"
+role = "USB for colord. UNVERIFIED: upstream publishes no checksum; hash is from an HTTPS download"

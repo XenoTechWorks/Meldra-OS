@@ -27,6 +27,12 @@ from tools.build_graphics_packages import manifest, python_wheel, require_glibc_
 import tools.build_desktop_libraries as desktop
 
 
+def pin(lock_data: dict, name: str) -> dict:
+    """A package's pin: the gnome section first, then the older desktop section."""
+    key = name.replace("-", "_")
+    return lock_data["gnome"][key] if key in lock_data["gnome"] else lock_data["desktop"][key]
+
+
 class Package:
     def __init__(self, name, deps, kind="meson", options=(), pattern=None, post=None, env=None,
                  introspect=False):
@@ -84,6 +90,10 @@ def introspection_cross_file(original):
         (shim / "gobject-introspection-1.0.pc").write_text("\n".join(lines) + "\nLibs:\nCflags:\n")
         text = text.replace("pkg_config_libdir = [", f"pkg_config_libdir = ['{shim}', ", 1)
         path.write_text(text, encoding="utf-8")
+        # Search only the target's .gir files, never the host's (they are a different glib).
+        os.environ["XDG_DATA_DIRS"] = f"{root}/usr/share"
+        os.environ["GI_TYPELIB_PATH"] = f"{root}/usr/lib/girepository-1.0:{root}/usr/lib64/girepository-1.0"
+        os.environ["GI_GIR_PATH"] = f"{root}/usr/share/gir-1.0"
         os.environ["GI_CROSS_LAUNCHER"] = (
             f"{loader} --library-path {library_path}")
         os.environ["PATH"] = f"{work}:{os.environ['PATH']}"  # cross-ldd first
@@ -101,6 +111,123 @@ PACKAGES = [
         pattern="libglib-2.0.so.0.*",
     ),
     Package("libcap", ("glibc",), kind="custom"),
+    Package(
+        "libxkbcommon", ("glibc", "libxml2"),
+        options=("-Denable-tools=false", "-Denable-x11=false", "-Denable-wayland=false",
+                 "-Denable-xkbregistry=true", "-Denable-bash-completion=false", "-Denable-docs=false"),
+        pattern="libxkbregistry.so.0.*",
+    ),
+    Package(
+        "lcms2", ("glibc",),
+        options=("-Djpeg=disabled", "-Dtiff=disabled", "-Dutils=false", "-Dfastfloat=true"),
+        pattern="liblcms2.so.2.*",
+    ),
+    Package(
+        "libei", ("glibc", "libevdev"),
+        options=("-Dtests=disabled", "-Ddocumentation=[]", "-Dliboeffis=disabled"),
+        pattern="libei.so.1.*",
+    ),
+    Package(
+        "libseccomp", ("glibc",), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--disable-python"),
+        pattern="libseccomp.so.2.*",
+    ),
+    Package(
+        "sqlite", ("glibc", "zlib"), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--disable-readline", "--enable-fts5"),
+        pattern="libsqlite3.so.3.*",
+    ),
+    Package(
+        "libusb", ("glibc", "eudev"), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--enable-udev", "--disable-examples-build",
+                 "--disable-tests-build"),
+        pattern="libusb-1.0.so.0.*",
+    ),
+    Package(
+        "libepoxy", ("glibc", "mesa", "libdrm", "wayland", "expat", "libffi"),
+        options=("-Degl=yes", "-Dglx=no", "-Dx11=false", "-Dtests=false"),
+        pattern="libepoxy.so.0.*",
+    ),
+    Package(
+        "gdk-pixbuf", ("glibc", "glib", "libffi", "pcre2", "zlib", "libpng"), introspect=True,
+        options=("-Dpng=enabled", "-Dtiff=disabled", "-Djpeg=disabled", "-Dgif=disabled",
+                 "-Dothers=disabled", "-Dgio_sniffing=false", "-Dman=false", "-Dgtk_doc=false",
+                 "-Dintrospection=enabled", "-Dtests=false", "-Dinstalled_tests=false",
+                 "-Dbuiltin_loaders=png", "-Drelocatable=false", "-Dglycin=disabled"),
+        pattern="libgdk_pixbuf-2.0.so.0.*",
+    ),
+    Package(
+        "at-spi2-core", ("glibc", "glib", "libffi", "pcre2", "zlib", "dbus", "expat", "libxml2"), introspect=True,
+        options=("-Dx11=disabled", "-Dintrospection=enabled", "-Ddocs=false", "-Dsystemd_user_dir=/usr/lib/systemd/user",
+                 "-Duse_systemd=false"),
+        pattern="libatspi.so.0.*",
+    ),
+    Package(
+        "gsettings-desktop-schemas", ("glibc", "glib", "libffi", "pcre2", "zlib"), introspect=True,
+        options=("-Dintrospection=true",),
+        pattern=None,
+    ),
+    Package(
+        "json-glib", ("glibc", "glib", "libffi", "pcre2", "zlib"), introspect=True,
+        options=("-Dtests=false", "-Dinstalled_tests=false", "-Dintrospection=enabled",
+                 "-Ddocumentation=disabled", "-Dman=false", "-Dnls=disabled"),
+        pattern="libjson-glib-1.0.so.0.*",
+    ),
+    Package(
+        "libgusb", ("glibc", "glib", "libffi", "pcre2", "zlib", "libusb", "json-glib"),
+        introspect=True,
+        options=("-Dtests=false", "-Dintrospection=true", "-Ddocs=false", "-Dvapi=false",
+                 "-Dusb_ids=/usr/share/hwdata/usb.ids"),
+        pattern="libgusb.so.2.*",
+    ),
+    Package(
+        "libgudev", ("glibc", "glib", "libffi", "pcre2", "zlib", "eudev"), introspect=True,
+        options=("-Dtests=disabled", "-Dintrospection=enabled", "-Dvapi=disabled", "-Dgtk_doc=false"),
+        pattern="libgudev-1.0.so.0.*",
+    ),
+    Package(
+        "colord", ("glibc", "glib", "lcms2", "pcre2", "libffi", "zlib", "sqlite", "libgusb", "libgudev"), introspect=True,
+        options=("-Ddaemon=false", "-Dsession_example=false", "-Dsystemd=false",
+                 "-Dlibcolordcompat=false", "-Dargyllcms_sensor=false", "-Dbash_completion=false",
+                 "-Dman=false", "-Ddocs=false", "-Dtests=false", "-Dudev_rules=false",
+                 "-Dvapi=false", "-Dintrospection=true", "-Dinstalled_tests=false", "-Dsane=false",
+                 "-Ddaemon_user=root"),
+        pattern="libcolord.so.2.*",
+    ),
+    Package(
+        "harfbuzz", ("glibc", "freetype", "glib"), introspect=True,
+        options=("-Dglib=enabled", "-Dgobject=enabled", "-Dfreetype=enabled", "-Dcairo=disabled",
+                 "-Dchafa=disabled", "-Dpng=disabled", "-Dzlib=disabled", "-Dicu=disabled",
+                 "-Dgraphite2=disabled", "-Dfontations=disabled", "-Dharfrust=disabled",
+                 "-Dwasm=disabled", "-Draster=disabled", "-Dvector=disabled", "-Dgpu=disabled",
+                 "-Dsubset=disabled", "-Dtests=disabled", "-Ddocs=disabled",
+                 "-Dintrospection=enabled", "-Dutilities=disabled"),
+        pattern="libharfbuzz.so.0.*",
+    ),
+    Package(
+        "cairo", ("glibc", "pixman", "zlib", "libpng", "freetype", "fontconfig", "glib"),
+        options=("-Dfontconfig=enabled", "-Dfreetype=enabled", "-Dpng=enabled", "-Dzlib=enabled",
+                 "-Ddwrite=disabled", "-Dquartz=disabled", "-Dtee=disabled", "-Dxcb=disabled",
+                 "-Dxlib=disabled", "-Dxlib-xcb=disabled", "-Dtests=disabled", "-Dlzo=disabled",
+                 "-Dglib=enabled", "-Dspectre=disabled", "-Dsymbol-lookup=disabled",
+                 "-Dgtk_doc=false"),
+        pattern="libcairo.so.2.*",
+    ),
+    Package(
+        "pango", ("glibc", "glib", "harfbuzz", "fribidi", "cairo", "fontconfig", "freetype"),
+        introspect=True,
+        options=("-Ddocumentation=false", "-Dman-pages=false", "-Dintrospection=enabled",
+                 "-Dbuild-testsuite=false", "-Dbuild-examples=false", "-Dfontconfig=enabled",
+                 "-Dsysprof=disabled", "-Dlibthai=disabled", "-Dcairo=enabled", "-Dxft=disabled",
+                 "-Dfreetype=enabled"),
+        pattern="libpango-1.0.so.0.*",
+    ),
+    Package(
+        "graphene", ("glibc", "glib", "libffi", "pcre2", "zlib"), introspect=True,
+        options=("-Dtests=false", "-Dinstalled_tests=false", "-Dgtk_doc=false",
+                 "-Dintrospection=enabled", "-Darm_neon=false", "-Dsse2=true"),
+        pattern="libgraphene-1.0.so.0.*",
+    ),
     Package(
         "dbus", ("glibc", "expat"),
         options=("-Dsystemd=disabled", "-Dselinux=disabled", "-Dapparmor=disabled",
@@ -178,7 +305,7 @@ def main() -> int:
     lock_data = tomllib.loads(args.lock.read_text(encoding="utf-8"))
     locks = lock_data["gnome"]
     for pkg in PACKAGES:
-        desktop.VERSIONS.setdefault(pkg.name, (lock_data["desktop"] if pkg.name == "glib" else locks)[pkg.name.replace("-", "_")]["version"])
+        desktop.VERSIONS.setdefault(pkg.name, pin(lock_data, pkg.name)["version"])
     if args.list:
         for pkg in PACKAGES:
             done = (args.output / f"{pkg.name}-{desktop.VERSIONS[pkg.name]}.kiln").is_file()
@@ -211,7 +338,7 @@ def main() -> int:
                     print(f"using existing package {archive}")
                     continue
                 print(f"==> {pkg.name} {desktop.VERSIONS[pkg.name]}", flush=True)
-                lock = (lock_data["desktop"] if pkg.name == "glib" else locks)[pkg.name.replace("-", "_")]
+                lock = pin(lock_data, pkg.name)
                 if pkg.kind == "autotools":
                     desktop.build_autotools(lock, pkg.name, args.cache, work, args.output,
                                             pkg.deps, pkg.options, pkg.pattern)
