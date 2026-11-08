@@ -493,6 +493,36 @@ PACKAGES = [
     Package("icu", ("glibc",), kind="custom"),
     Package("nspr", ("glibc",), kind="custom"),
     Package("nss", ("glibc", "nspr", "sqlite", "zlib"), kind="custom"),
+    Package(
+        "libgpg-error", ("glibc",), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--disable-doc", "--disable-tests",
+                 "--disable-languages", "--disable-nls"),
+        pattern="libgpg-error.so.0.*",
+    ),
+    Package(
+        "libgcrypt", ("glibc", "libgpg-error"), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--disable-doc", "--disable-asm"),
+        pattern="libgcrypt.so.20.*",
+    ),
+    Package(
+        "libtasn1", ("glibc",), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--disable-doc"),
+        pattern="libtasn1.so.6.*",
+    ),
+    Package(
+        "p11-kit", ("glibc", "libffi", "libtasn1"),
+        options=("-Dtest=false", "-Dnls=false", "-Dman=false", "-Dgtk_doc=false", "-Dsystemd=disabled",
+                 "-Dbash_completion=disabled", "-Dtrust_module=enabled", "-Dtrust_paths=/etc/ssl/certs/ca-certificates.crt",
+                 "--sysconfdir=/etc"),
+        pattern="libp11-kit.so.0.*",
+    ),
+    Package(
+        "gcr", ("glibc", "glib", "libffi", "pcre2", "zlib", "p11-kit", "libgcrypt", "libgpg-error", "libsecret", "gtk", "pango", "harfbuzz", "fribidi", "cairo", "pixman", "freetype", "fontconfig", "libpng", "libtiff", "libjpeg-turbo", "gdk-pixbuf", "graphene", "libepoxy", "libxkbcommon", "wayland", "wayland-protocols", "mesa", "libdrm", "expat", "libxml2"),
+        introspect=True,
+        options=("-Dcrypto=libgcrypt", "-Dssh_agent=false", "-Dgtk4=true", "-Dintrospection=true",
+                 "-Dvapi=false", "-Dgtk_doc=false", "-Dsystemd=disabled", "-Dgpg_path=/usr/bin/gpg"),
+        pattern="libgcr-4.so.4.*",
+    ),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",

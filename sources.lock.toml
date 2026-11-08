@@ -444,3 +444,33 @@ version = "79.1"
 url = "https://github.com/unicode-org/icu/releases/download/release-79.1/icu4c-79.1-sources.tgz"
 sha256 = "06fa63ecb521048f8082f12ad988f6b678d90cbd88aafce24cbc94902b191d99"
 role = "Unicode (EDS requires icu-i18n)"
+
+[gnome.gcr]
+version = "4.4.1"
+url = "https://download.gnome.org/sources/gcr/4.4/gcr-4.4.1.tar.xz"
+sha256 = "c4442c15d4330f17a1f5194df08c576877af68412ab2521446a93bd5e24c931b"
+role = "certificate and key UI/crypto library the Shell requires (gcr-4)"
+
+[gnome.libgpg_error]
+version = "1.61"
+url = "https://www.gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-1.61.tar.bz2"
+sha256 = "7a85413f2bc354f4f8aa832b718af122e48965e9e0eb9012ee659c13c6385c93"
+role = "error codes for libgcrypt; checksum matches Debian's orig tarball"
+
+[gnome.libgcrypt]
+version = "1.12.4"
+url = "https://www.gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-1.12.4.tar.bz2"
+sha256 = "d77f68f48879510e79a2f65977ccc68981781ea0923e5bdffac2a193ea3d660e"
+role = "crypto for gcr; checksum matches Debian's orig tarball"
+
+[gnome.libtasn1]
+version = "4.21.0"
+url = "https://ftp.gnu.org/gnu/libtasn1/libtasn1-4.21.0.tar.gz"
+sha256 = "1d8a444a223cc5464240777346e125de51d8e6abf0b8bac742ac84609167dc87"
+role = "ASN.1 for p11-kit; checksum matches Debian's orig tarball"
+
+[gnome.p11_kit]
+version = "0.26.5"
+url = "https://github.com/p11-glue/p11-kit/releases/download/0.26.5/p11-kit-0.26.5.tar.xz"
+sha256 = "f2cc09111e44bf3fea58f023180b33acea90aa82d042d6fbb623fbc5ba033bb7"
+role = "PKCS#11 module loading for gcr; checksum matches Debian's orig tarball"

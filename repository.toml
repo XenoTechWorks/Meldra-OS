@@ -465,3 +465,33 @@ name = "nss"
 version = "3.133"
 status = "built"
 dependencies = ["glibc", "nspr", "sqlite", "zlib"]
+
+[[package]]
+name = "gcr"
+version = "4.4.1"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "p11-kit", "libgcrypt", "libgpg-error", "libsecret", "gtk", "pango", "harfbuzz", "fribidi", "cairo", "pixman", "freetype", "fontconfig", "libpng", "libtiff", "libjpeg-turbo", "gdk-pixbuf", "graphene", "libepoxy", "libxkbcommon", "wayland", "wayland-protocols", "mesa", "libdrm", "expat", "libxml2"]
+
+[[package]]
+name = "libgcrypt"
+version = "1.12.4"
+status = "built"
+dependencies = ["glibc", "libgpg-error"]
+
+[[package]]
+name = "libgpg-error"
+version = "1.61"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libtasn1"
+version = "4.21.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "p11-kit"
+version = "0.26.5"
+status = "built"
+dependencies = ["glibc", "libffi", "libtasn1"]
