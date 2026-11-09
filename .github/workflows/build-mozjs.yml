@@ -60,6 +60,18 @@ jobs:
             --work /mnt/meldra/work \
             --cache /mnt/meldra/downloads \
             --output "$GITHUB_WORKSPACE/out" 2>&1 | tee logs/build-mozjs.log
+          sha256sum out/*.kiln | tee out/SHA256SUMS
+
+      # Uploaded before the audit: a long build must not be thrown away because a check failed.
+      - name: Upload packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: meldra-mozjs
+          path: |
+            out/*.kiln
+            out/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Audit the packages
         run: |
@@ -72,17 +84,6 @@ jobs:
           tar -xf out/mozjs-*.kiln -C inspect
           library=$(find inspect -name 'libmozjs-*.so*' -type f | head -1)
           readelf -d "$library" | grep -E 'SONAME|NEEDED|RPATH|RUNPATH'
-          sha256sum out/*.kiln | tee out/SHA256SUMS
-
-      - name: Upload packages
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
-        with:
-          name: meldra-mozjs
-          path: |
-            out/*.kiln
-            out/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 30
 
       - name: Upload the build log
         if: always()

@@ -20,8 +20,9 @@ def main() -> int:
     for package in packages:
         with tempfile.TemporaryDirectory() as directory, tarfile.open(package) as bundle:
             bundle.extractall(directory, filter="data")
-            declared = tomllib.loads((Path(directory) / "KILN.toml").read_text())["package"].get("dependencies", [])
-            runtime_declared = "gcc-runtime" in declared
+            meta = tomllib.loads((Path(directory) / "KILN.toml").read_text())["package"]
+            # The gcc-runtime package is where libstdc++ and libgcc_s live; it may need its own pieces.
+            runtime_declared = "gcc-runtime" in meta.get("dependencies", []) or meta["name"] == "gcc-runtime"
             for path in Path(directory).rglob("*"):
                 if path.is_symlink() or not path.is_file():
                     continue
