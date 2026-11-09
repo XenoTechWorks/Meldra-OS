@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -534,6 +535,14 @@ PACKAGES = [
                  "-Dglycin-thumbnailer=false", "-Dcapi_docs=false", "-Dlto=false"),
         pattern="libglycin-2.so.0",
     ),
+    Package(
+        "gjs", ("glibc", "glib", "libffi", "pcre2", "zlib", "cairo", "pixman", "freetype", "fontconfig",
+                "libpng", "expat", "mozjs", "gcc-runtime"),
+        introspect=True,
+        options=("-Dreadline=disabled", "-Dprofiler=disabled", "-Dinstalled_tests=false",
+                 "-Dskip_dbus_tests=true", "-Dskip_gtk_tests=true"),
+        pattern="libgjs.so.0.*",
+    ),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
@@ -762,6 +771,18 @@ def main() -> int:
     locks = lock_data["gnome"]
     for pkg in PACKAGES:
         desktop.VERSIONS.setdefault(pkg.name, pin(lock_data, pkg.name)["version"])
+    # Packages built elsewhere (mozjs and gcc-runtime come from CI): use the newest of each as an input.
+    import tarfile
+    newest = {}
+    for archive in args.output.glob("*.kiln"):
+        with tarfile.open(archive) as bundle:
+            meta = tomllib.loads(bundle.extractfile("KILN.toml").read().decode())["package"]
+        key = [int(x) if x.isdigit() else 0 for x in re.split(r"[.]", meta["version"])]
+        if meta["name"] not in newest or key > newest[meta["name"]][0]:
+            newest[meta["name"]] = (key, meta["version"])
+    for name in ("mozjs", "gcc-runtime"):
+        if name in newest:
+            desktop.VERSIONS[name] = newest[name][1]
     if args.list:
         for pkg in PACKAGES:
             done = (args.output / f"{pkg.name}-{desktop.VERSIONS[pkg.name]}.kiln").is_file()

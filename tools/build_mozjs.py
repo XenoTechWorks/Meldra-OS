@@ -134,6 +134,17 @@ def main() -> int:
     if any((stage / "usr/lib").glob("libjs_static*")):
         raise RuntimeError("the static archive is still in the package")
 
+    # Mozilla's own build passes -DXP_UNIX -DXP_LINUX on every compile; the installed headers need them
+    # from consumers (mozilla/UniquePtrExtensions.h stops with "Unsupported OS?" without XP_UNIX). The
+    # pkg-config file is how they reach gjs and everything that builds against gjs.
+    for pc in (stage / "usr/lib/pkgconfig").glob("mozjs-*.pc"):
+        text = pc.read_text()
+        if "XP_UNIX" not in text:
+            text = text.replace("Cflags: ", "Cflags: -DXP_UNIX -DXP_LINUX ", 1)
+            if "XP_UNIX" not in text:
+                raise RuntimeError(f"{pc.name} has no Cflags line to add the platform defines to")
+            pc.write_text(text)
+
     runtime_version, _ = package_gcc_runtime(args.output, work)
     series = re.match(r"(\d+)", version).group(1)
     build(manifest(stage, "mozjs", version, ("glibc", "gcc-runtime")), args.output / f"mozjs-{version}.kiln")

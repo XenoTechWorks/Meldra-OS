@@ -501,3 +501,21 @@ name = "glycin"
 version = "2.2.6"
 status = "built"
 dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libseccomp", "lcms2", "fontconfig", "freetype", "expat", "libpng"]
+
+[[package]]
+name = "gcc-runtime"
+version = "15.2.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "gjs"
+version = "1.88.1"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "cairo", "pixman", "freetype", "fontconfig", "libpng", "expat", "mozjs", "gcc-runtime"]
+
+[[package]]
+name = "mozjs"
+version = "140.17.0"
+status = "built"
+dependencies = ["glibc", "gcc-runtime"]
