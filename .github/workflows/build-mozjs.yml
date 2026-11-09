@@ -39,6 +39,14 @@ jobs:
           echo "python: $(python3 --version)"
           echo "glibc:  $(ldd --version | head -1)"
 
+      - name: Install cbindgen
+        run: |
+          # Firefox 140 needs cbindgen >= 0.27. Pinned exactly; --locked uses the crate's own lockfile.
+          cargo install cbindgen --version 0.29.4 --locked
+          crate=$(find "$HOME/.cargo/registry/cache" -name 'cbindgen-0.29.4.crate' | head -1)
+          echo "2ecb53484c9c167ba674026b656d8a27d7657a58e6066aa902bfb1a4aa00ae20  $crate" | sha256sum -c -
+          cbindgen --version
+
       - name: Build mozjs and gcc-runtime
         env:
           MOZBUILD_STATE_PATH: /mnt/meldra/mozbuild-state
