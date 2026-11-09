@@ -31,8 +31,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends python3-venv pkg-config make
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          # Pinned to the Rust of Firefox 140's era: a much newer rustc (1.99 failed here) changes how
+          # static libraries export symbols, and the final libmozjs link then misses the Rust symbols.
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
           echo "gcc:    $(gcc --version | head -1)"
           echo "rustc:  $(rustc --version)"
           echo "cargo:  $(cargo --version)"
