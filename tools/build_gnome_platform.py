@@ -543,6 +543,22 @@ PACKAGES = [
                  "-Dskip_dbus_tests=true", "-Dskip_gtk_tests=true"),
         pattern="libgjs.so.0.*",
     ),
+    Package(
+        "mutter", ("glibc", "glib", "libffi", "pcre2", "zlib", "cairo", "pixman", "freetype", "fontconfig", "libpng", "expat",
+                "pango", "harfbuzz", "fribidi", "graphene", "gsettings-desktop-schemas", "libxkbcommon", "libxml2",
+                "at-spi2-core", "dbus", "colord", "lcms2", "sqlite", "libgusb", "libusb", "json-glib", "libei",
+                "libdisplay-info", "libdrm", "gnome-desktop", "gdk-pixbuf", "gtk", "libgudev", "eudev", "wayland",
+                "wayland-protocols", "libinput", "libevdev", "mtdev", "mesa", "glycin", "libseccomp", "elogind",
+                "libcap", "util-linux", "libepoxy", "libtiff", "libjpeg-turbo", "iso-codes", "xkeyboard-config"),
+        introspect=True,
+        options=("-Dxwayland=false", "-Dlogind=true", "-Dnative_backend=true", "-Dremote_desktop=false",
+                 "-Dlibwacom=false", "-Dsound_player=false", "-Dstartup_notification=false", "-Dprofiler=false",
+                 "-Dintrospection=true", "-Ddocs=false", "-Dtests=disabled", "-Dcogl_tests=false",
+                 "-Dclutter_tests=false", "-Dmutter_tests=false", "-Dinstalled_tests=false",
+                 "-Dbash_completion=false", "-Ddevkit=disabled", "-Degl_device=false", "-Dwayland_eglstream=false",
+                 "-Dverbose=false", "-Dudev=true", "-Dgles2=true", "-Degl=true", "-Dopengl=false"),
+        pattern="libmutter-18.so.0.*",
+    ),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
@@ -711,6 +727,23 @@ def rust_cross_file(original):
     return make
 
 
+HOST_LIBXCVT = Path("build/host-tools/libxcvt")
+
+
+def build_host_libxcvt(lock: dict, cache: Path, work: Path) -> None:
+    """Mutter runs `cvt` at build time to generate its default display-mode table."""
+    prefix = HOST_LIBXCVT.resolve()
+    if not (prefix / "bin/cvt").is_file():
+        upstream = source(lock, cache, work / "host-libxcvt-source")
+        build_dir = work / "host-libxcvt-build"
+        subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), f"--prefix={prefix}",
+                        "--libdir=lib"], check=True)
+        subprocess.run([*desktop.MESON, "install", "-C", str(build_dir)], check=True)
+    os.environ["PATH"] = f"{prefix}/bin{os.pathsep}{os.environ['PATH']}"
+    # The private-prefix cvt has no rpath for its own libxcvt.
+    os.environ["LD_LIBRARY_PATH"] = f"{prefix}/lib{os.pathsep}{os.environ.get('LD_LIBRARY_PATH', '')}".rstrip(os.pathsep)
+
+
 def meson_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     original = desktop.cross_file
     if pkg.rust:
@@ -806,13 +839,22 @@ def main() -> int:
             gentle_environment(work, max(1, args.jobs))
             desktop.MESON = pinned_meson(lock_data["host_tools"]["meson"], args.cache, work)
             build_host_wayland(lock_data["desktop"]["wayland"], args.cache, work)
+            build_host_libxcvt(locks["libxcvt"], args.cache, work)
             # Build-time-only Python modules (templating), from pinned wheels.
             wheel_paths = []
-            for tool in ("jinja2", "markupsafe"):
+            for tool in ("jinja2", "markupsafe", "docutils"):
                 tool_work = work / f"host-{tool}"
                 tool_work.mkdir()
                 wheel_paths.append(str(python_wheel(lock_data["host_tools"][tool], args.cache, tool_work)))
             os.environ["PYTHONPATH"] = os.pathsep.join(wheel_paths + [os.environ.get("PYTHONPATH", "")]).rstrip(os.pathsep)
+            # rst2man (docutils) renders man pages for projects that build them unconditionally.
+            tools_bin = work / "tools-bin"
+            tools_bin.mkdir()
+            launcher = tools_bin / "rst2man"
+            launcher.write_text(f"#!{sys.executable}\nimport sys\nsys.path[:0] = {wheel_paths!r}\n"
+                                "from docutils.core import publish_cmdline\npublish_cmdline(writer_name='manpage')\n")
+            launcher.chmod(0o755)
+            os.environ["PATH"] = f"{tools_bin}{os.pathsep}{os.environ['PATH']}"
             if "host-gi" in args.names:
                 build_host_gi(locks["gobject_introspection"], args.cache, work)
             if any(p.introspect for p in wanted):
