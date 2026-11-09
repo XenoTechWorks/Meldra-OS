@@ -519,3 +519,15 @@ name = "mozjs"
 version = "140.17.0"
 status = "built"
 dependencies = ["glibc", "gcc-runtime"]
+
+[[package]]
+name = "libsndfile"
+version = "1.2.2"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "pulseaudio"
+version = "17.0"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libcap", "libsndfile"]

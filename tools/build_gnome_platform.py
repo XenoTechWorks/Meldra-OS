@@ -78,7 +78,9 @@ def introspection_cross_file(original):
         root = sysroot.resolve()
         ldd = work / "cross-ldd"
         loader = root / "lib64/ld-linux-x86-64.so.2"
-        library_path = f"{root}/lib64:{root}/usr/lib64:{root}/usr/lib"
+        # usr/lib/pulseaudio holds libpulsecommon, which libpulse reaches through an absolute rpath that
+        # only means something on the installed system.
+        library_path = f"{root}/lib64:{root}/usr/lib64:{root}/usr/lib:{root}/usr/lib/pulseaudio"
         ldd.write_text(f'#!/bin/sh\nexec "{loader}" --library-path "{library_path}" --list "$@"\n')
         ldd.chmod(0o755)
         text = text.replace("[binaries]\n", "[binaries]\n"
@@ -256,6 +258,201 @@ def native_libical_generator(upstream: Path, work: Path) -> Path:
     subprocess.run(["cmake", "--install", str(native)], check=True, stdout=subprocess.DEVNULL)
     exported = next((native / "prefix").rglob("IcalGlibSrcGenerator.cmake"))
     return exported
+
+
+def strip_sysroot_from_rpaths(stage: Path, root: Path) -> int:
+    """Remove the build sysroot prefix from RPATH/RUNPATH strings, in place.
+
+    Meson resolves private library directories through pkg-config with the sysroot prefix attached, so
+    an installed ELF can end up with /build/.../sysroot/usr/lib/foo in its rpath. The correct installed
+    value is /usr/lib/foo. The edit only ever shortens the string inside .dynstr (padded with NULs), so
+    no offsets move. The result is checked with readelf.
+    """
+    prefix = str(root).encode()
+    fixed = 0
+    for path in stage.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        data = path.read_bytes()
+        if data[:4] != b"\x7fELF" or prefix not in data:
+            continue
+        dynamic = subprocess.run(["readelf", "-d", str(path)], capture_output=True, text=True).stdout
+        values = re.findall(r"(?:RPATH|RUNPATH)[^\[]*\[([^\]]+)\]", dynamic)
+        if not values:
+            continue
+        buffer = bytearray(data)
+        for value in values:
+            if prefix.decode() not in value:
+                continue
+            old = value.encode()
+            new = b":".join(part[len(prefix):] if part.startswith(prefix) else part for part in old.split(b":"))
+            # Only the exact, NUL-delimited rpath string is edited, never other text that mentions the path.
+            needle = b"\x00" + old + b"\x00"
+            at = buffer.find(needle)
+            if at == -1 or buffer.find(needle, at + 1) != -1:
+                raise RuntimeError(f"{path.name}: cannot uniquely locate its rpath string")
+            buffer[at + 1:at + 1 + len(old)] = new + b"\x00" * (len(old) - len(new))
+            fixed += 1
+        path.write_bytes(bytes(buffer))
+        check = subprocess.run(["readelf", "-d", str(path)], capture_output=True, text=True).stdout
+        if str(root) in check:
+            raise RuntimeError(f"{path.name}: the sysroot is still in its rpath after the edit")
+    return fixed
+
+
+def strip_sysroot_from_baked_paths(stage: Path, root: Path) -> list[str]:
+    """Fix compiled-in path strings that pkg-config handed to the compiler with the sysroot prefix attached.
+
+    `pkg-config --variable=...` prepends PKG_CONFIG_SYSROOT_DIR to paths, so a value a program bakes in
+    (for example GNOME Shell's Mutter typelib directory) can name the build sysroot, which does not exist on
+    the installed system. Only exact NUL-delimited strings that start with the sysroot are rewritten (the
+    prefix is removed and the string padded with NULs), and each change is returned so it can be logged.
+    """
+    pattern = re.compile(rb"(?<=\x00)" + re.escape(str(root).encode()) + rb"(/[^\x00]*)(?=\x00)")
+    changed = []
+    for path in stage.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        data = path.read_bytes()
+        if data[:4] != b"\x7fELF" or str(root).encode() not in data:
+            continue
+        buffer = bytearray(data)
+        for match in list(pattern.finditer(data)):
+            old, new = match.group(0), match.group(1)
+            buffer[match.start():match.end()] = new + b"\x00" * (len(old) - len(new))
+            changed.append(f"{path.relative_to(stage)}: {old.decode()} -> {new.decode()}")
+        path.write_bytes(bytes(buffer))
+    return changed
+
+
+def strip_any_sysroot_prefix(stage: Path) -> list[str]:
+    """Like strip_sysroot_from_baked_paths, for packages whose sysroot path is not known to the caller:
+    any NUL-delimited string of the form <anything>/sysroot/<path> in an ELF becomes /<path>."""
+    pattern = re.compile(rb"(?<=\x00)[^\x00]*?/sysroot(/[^\x00]*)(?=\x00)")
+    changed = []
+    for path in stage.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        data = path.read_bytes()
+        if data[:4] != b"\x7fELF" or b"/sysroot/" not in data:
+            continue
+        buffer = bytearray(data)
+        for match in list(pattern.finditer(data)):
+            old, new = match.group(0), match.group(1)
+            if not new.startswith((b"/usr/", b"/etc/", b"/var/", b"/lib", b"/opt/")):
+                continue
+            buffer[match.start():match.end()] = new + b"\x00" * (len(old) - len(new))
+            changed.append(f"{path.relative_to(stage)}: {new.decode()}")
+        path.write_bytes(bytes(buffer))
+    return changed
+
+
+_kiln_build = build
+
+
+def checked_build(package: Path, archive: Path):
+    """Every package passes through here: sysroot-prefixed strings baked into binaries are corrected first."""
+    for line in strip_any_sysroot_prefix(Path(package) / "root"):
+        print(f"baked path fixed: {line}", flush=True)
+    return _kiln_build(package, archive)
+
+
+build = checked_build
+desktop.build = checked_build
+
+
+def apply_recorded_patch(path: Path, before: str, after: str, old: str, new: str, why: str) -> None:
+    """The only way a pinned source is modified: an exact replacement, refused unless the file's hash
+    before and after matches what was reviewed. Every use is printed so it shows up in build logs."""
+    import hashlib
+    text = path.read_text()
+    if hashlib.sha256(text.encode()).hexdigest() != before:
+        raise RuntimeError(f"{path.name} is not the reviewed file; refusing to patch it")
+    if text.count(old) != 1:
+        raise RuntimeError(f"{path.name}: expected exactly one occurrence of the text to replace")
+    patched = text.replace(old, new, 1)
+    if hashlib.sha256(patched.encode()).hexdigest() != after:
+        raise RuntimeError(f"{path.name}: the patch does not produce the reviewed result")
+    path.write_text(patched)
+    print(f"PATCH {path.name}: {why}", flush=True)
+
+
+def gnome_shell_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """GNOME Shell runs `gjs` while building (its path goes into D-Bus service files), so a wrapper runs
+    the target's gjs through the target loader; the installed files are then rewritten to /usr/bin/gjs."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    apply_recorded_patch(
+        upstream / "src/shell-app-usage.c",
+        before="72e10b91aa6245d460275da5a4da8809a3597dd6ebb5f81237a915ebad62de55",
+        after="b13c5746836355b7a70e6d8813002e442c685ad822a59ebdded0e42373cba3ea",
+        old="#include <X11/Xlib.h>\n#include <X11/Xatom.h>\n", new="",
+        why="GNOME Shell 50.6 includes X11 headers here without using any X11 symbol; the tray code that does "
+            "is guarded by have_xwayland. Meldra builds Mutter without Xwayland and ships no X11 libraries.")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    tools = unit / "gjs-wrapper"
+    tools.mkdir()
+    wrapper = tools / "gjs"
+    wrapper.write_text(
+        f'#!/bin/sh\nexport GI_TYPELIB_PATH="{root}/usr/lib/girepository-1.0:{root}/usr/lib/mutter-18"\n'
+        f'export GCONV_PATH="{root}/usr/lib64/gconv"\n'
+        f'exec "{root}/lib64/ld-linux-x86-64.so.2" --library-path "{root}/lib64:{root}/usr/lib64:{root}/usr/lib:{root}/usr/lib/pulseaudio" '
+        f'"{root}/usr/bin/gjs" "$@"\n')
+    wrapper.chmod(0o755)
+    os.environ["PATH"] = f"{tools}{os.pathsep}{os.environ['PATH']}"
+    original = desktop.cross_file
+    desktop.cross_file = introspection_cross_file(original)
+    try:
+        cross = desktop.cross_file(unit, sysroot)
+        build_dir, stage = unit / "build", unit / "package/root"
+        subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), "--prefix=/usr",
+                        "--sysconfdir=/etc", "--cross-file", str(cross), *pkg.options], check=True)
+        subprocess.run([*desktop.MESON, "compile", "-C", str(build_dir)], check=True)
+        subprocess.run([*desktop.MESON, "install", "-C", str(build_dir), "--destdir", str(stage)], check=True)
+    finally:
+        desktop.cross_file = original
+    count = strip_sysroot_from_rpaths(stage, root)
+    print(f"rpaths: removed the sysroot prefix from {count} string(s)", flush=True)
+    for line in strip_sysroot_from_baked_paths(stage, root):
+        print(f"baked path: {line}", flush=True)
+    # Debug info records the build directory; strip it from the installed binaries.
+    stripped = 0
+    for path in stage.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        with path.open("rb") as stream:
+            if stream.read(4) != b"\x7fELF":
+                continue
+        subprocess.run(["strip", "--strip-debug", str(path)], check=True)
+        stripped += 1
+    print(f"stripped debug info from {stripped} ELF file(s)", flush=True)
+    # The build-machine gjs wrapper path must not survive into installed text files.
+    for path in stage.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            text = path.read_text()
+        except (UnicodeDecodeError, OSError):
+            continue
+        if str(wrapper) in text:
+            path.write_text(text.replace(str(wrapper), "/usr/bin/gjs"))
+    leaks = []
+    for path in stage.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            text = path.read_text()
+        except (UnicodeDecodeError, OSError):
+            continue
+        if str(work) in text or str(root) in text:
+            leaks.append(str(path.relative_to(stage)))
+    if leaks:
+        raise RuntimeError("build directory paths are in installed text files: " + ", ".join(leaks[:8]))
+    if not (stage / pkg.pattern).exists():
+        raise RuntimeError(f"{pkg.name}: expected file not installed: {pkg.pattern}")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
 def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
@@ -559,6 +756,40 @@ PACKAGES = [
                  "-Dverbose=false", "-Dudev=true", "-Dgles2=true", "-Degl=true", "-Dopengl=false"),
         pattern="libmutter-18.so.0.*",
     ),
+    Package(
+        "gnome-shell", ("glibc", "glib", "libffi", "pcre2", "zlib", "cairo", "pixman", "freetype", "fontconfig", "libpng", "expat",
+                "pango", "harfbuzz", "fribidi", "graphene", "gsettings-desktop-schemas", "libxkbcommon", "libxml2",
+                "at-spi2-core", "dbus", "colord", "lcms2", "sqlite", "libgusb", "libusb", "json-glib", "libei",
+                "libdisplay-info", "libdrm", "gnome-desktop", "gdk-pixbuf", "gtk", "libgudev", "eudev", "wayland",
+                "wayland-protocols", "libinput", "libevdev", "mtdev", "mesa", "glycin", "libseccomp", "elogind",
+                "libcap", "util-linux", "libepoxy", "libtiff", "libjpeg-turbo", "iso-codes", "xkeyboard-config", "mutter", "gjs", "mozjs", "gcc-runtime", "polkit", "gcr", "evolution-data-server", "icu", "nss", "nspr", "libical", "libsecret", "libsoup", "libpsl", "nghttp2", "p11-kit", "libgcrypt", "libgpg-error", "libtasn1", "duktape", "pulseaudio", "libsndfile"),
+        introspect=True, kind="custom",
+        options=("-Dnetworkmanager=false", "-Dsystemd=false", "-Dcamera_monitor=false", "-Dportal_helper=false",
+                 "-Dextensions_tool=false", "-Dextensions_app=false", "-Dgtk_doc=false", "-Dman=false",
+                 "-Dtests=false"),
+        pattern="usr/bin/gnome-shell",
+    ),
+    Package(
+        "libsndfile", ("glibc",), kind="cmake",
+        options=("-DENABLE_EXTERNAL_LIBS=OFF", "-DENABLE_MPEG=OFF", "-DBUILD_PROGRAMS=OFF",
+                 "-DBUILD_EXAMPLES=OFF", "-DBUILD_TESTING=OFF", "-DBUILD_REGTEST=OFF",
+                 "-DENABLE_CPU_CLIP=OFF", "-DINSTALL_MANPAGES=OFF", "-DBUILD_SHARED_LIBS=ON",
+                 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"),
+        pattern="libsndfile.so.1.*",
+    ),
+    Package(
+        "pulseaudio", ("glibc", "glib", "libffi", "pcre2", "zlib", "libcap", "libsndfile"),
+        options=("-Ddaemon=false", "-Dclient=true", "-Ddoxygen=false", "-Dman=false", "-Dtests=false",
+                 "-Dglib=enabled", "-Dalsa=disabled", "-Dasyncns=disabled", "-Davahi=disabled",
+                 "-Dbluez5=disabled", "-Ddbus=disabled", "-Delogind=disabled", "-Dgsettings=disabled",
+                 "-Dgstreamer=disabled", "-Dgtk=disabled", "-Dopenssl=disabled", "-Dorc=disabled",
+                 "-Dsystemd=disabled", "-Dudev=disabled", "-Dx11=disabled", "-Dtcpwrap=disabled",
+                 "-Dsoxr=disabled", "-Dspeex=disabled", "-Dfftw=disabled", "-Dsamplerate=disabled",
+                 "-Dwebrtc-aec=disabled", "-Dlirc=disabled", "-Djack=disabled", "-Dconsolekit=disabled",
+                 "-Dhal-compat=false", "-Dadrian-aec=false", "-Doss-output=disabled",
+                 "--sysconfdir=/etc", "--localstatedir=/var"),
+        pattern="libpulse.so.0.*",
+    ),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
@@ -727,6 +958,22 @@ def rust_cross_file(original):
     return make
 
 
+HOST_SASSC = Path("build/host-tools/sassc")
+
+
+def build_host_sassc(locks: dict, cache: Path, work: Path) -> None:
+    """sassc compiles the Shell's SCSS theme at build time; it must run on the build machine."""
+    prefix = HOST_SASSC.resolve()
+    if not (prefix / "bin/sassc").is_file():
+        libsass = source(locks["libsass"], cache, work / "host-libsass-source")
+        sassc = source(locks["sassc"], cache, work / "host-sassc-source")
+        subprocess.run(["make", "BUILD=static"], cwd=libsass, check=True)
+        subprocess.run(["make", "BUILD=static", f"SASS_LIBSASS_PATH={libsass}"], cwd=sassc, check=True)
+        (prefix / "bin").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(sassc / "bin/sassc", prefix / "bin/sassc")
+    os.environ["PATH"] = f"{prefix}/bin{os.pathsep}{os.environ['PATH']}"
+
+
 HOST_LIBXCVT = Path("build/host-tools/libxcvt")
 
 
@@ -840,6 +1087,8 @@ def main() -> int:
             desktop.MESON = pinned_meson(lock_data["host_tools"]["meson"], args.cache, work)
             build_host_wayland(lock_data["desktop"]["wayland"], args.cache, work)
             build_host_libxcvt(locks["libxcvt"], args.cache, work)
+            if "gnome-shell" in args.names:
+                build_host_sassc(locks, args.cache, work)
             # Build-time-only Python modules (templating), from pinned wheels.
             wheel_paths = []
             for tool in ("jinja2", "markupsafe", "docutils"):
@@ -866,7 +1115,9 @@ def main() -> int:
                     continue
                 print(f"==> {pkg.name} {desktop.VERSIONS[pkg.name]}", flush=True)
                 lock = pin(lock_data, pkg.name)
-                if pkg.name == "icu":
+                if pkg.name == "gnome-shell":
+                    gnome_shell_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.name == "icu":
                     icu_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.name == "nss":
                     nss_build(pkg, lock, args.cache, work, args.output)

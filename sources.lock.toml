@@ -498,3 +498,27 @@ version = "0.23"
 url = "https://files.pythonhosted.org/packages/32/91/30151a39f7570f448ed84529390628a651d7f27c87d73c9b887f8189695e/docutils-0.23-py3-none-any.whl"
 sha256 = "25d013af9bf23bc1c7b2b093dff4208166c53a94786c9e447808335ef1185fea"
 role = "rst2man for Mutter's man pages (build-time only)"
+
+[gnome.libsass]
+version = "3.6.5+20231221"
+url = "https://deb.debian.org/debian/pool/main/libs/libsass/libsass_3.6.5+20231221.orig.tar.xz"
+sha256 = "4a9d45e56f649d604e86e0d81bfcd541ae24baf541577cc1bd08c3aa98bdb493"
+role = "SCSS compiler library for the Shell theme (native, build-time); Debian's orig tarball, checksum from Debian's source index"
+
+[gnome.sassc]
+version = "3.6.1+20201027"
+url = "https://deb.debian.org/debian/pool/main/s/sassc/sassc_3.6.1+20201027.orig.tar.xz"
+sha256 = "8377ba728fc94cd32a13fc31a6da06891984e8e5bc36b1ddd0c15be403c48791"
+role = "sassc CLI for the Shell theme (native, build-time); Debian's orig tarball, checksum from Debian's source index"
+
+[gnome.pulseaudio]
+version = "17.0"
+url = "https://www.freedesktop.org/software/pulseaudio/releases/pulseaudio-17.0.tar.xz"
+sha256 = "053794d6671a3e397d849e478a80b82a63cb9d8ca296bd35b73317bb5ceb87b5"
+role = "libpulse client library for the Shell's volume control (daemon not built); checksum from upstream's .sha256sum"
+
+[gnome.libsndfile]
+version = "1.2.2"
+url = "https://deb.debian.org/debian/pool/main/libs/libsndfile/libsndfile_1.2.2.orig.tar.gz"
+sha256 = "ffe12ef8add3eaca876f04087734e6e8e029350082f3251f565fa9da55b52121"
+role = "audio file library libpulse requires; Debian's orig tarball, checksum from Debian's source index"
