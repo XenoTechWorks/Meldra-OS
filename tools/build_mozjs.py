@@ -127,8 +127,12 @@ def main() -> int:
         if path.is_file() and not path.is_symlink():
             run("strip", "--strip-unneeded", str(path))
     # The static archive, the shell and the -config script are not needed at runtime or by gjs.
-    for extra in list((stage / "usr/lib").glob("*.a")) + list((stage / "usr/bin").glob("js*")):
+    # Mozilla names its static archive libjs_static.ajs (760 MB), which a "*.a" pattern misses.
+    for extra in (list((stage / "usr/lib").glob("*.a")) + list((stage / "usr/lib").glob("libjs_static.*"))
+                  + list((stage / "usr/bin").glob("js*"))):
         extra.unlink()
+    if any((stage / "usr/lib").glob("libjs_static*")):
+        raise RuntimeError("the static archive is still in the package")
 
     runtime_version, _ = package_gcc_runtime(args.output, work)
     series = re.match(r"(\d+)", version).group(1)
