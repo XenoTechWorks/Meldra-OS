@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
-"""Fail if any ELF in a Kiln package records an absolute path (a build directory) as a needed library.
+"""Fail if any ELF in a Kiln package records a build path, or needs libstdc++/libgcc_s without declaring
+the gcc-runtime package as a dependency.
 
     audit_needed.py [build/packages/*.kiln]
 """
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 from pathlib import Path
 
 
@@ -18,6 +20,8 @@ def main() -> int:
     for package in packages:
         with tempfile.TemporaryDirectory() as directory, tarfile.open(package) as bundle:
             bundle.extractall(directory, filter="data")
+            declared = tomllib.loads((Path(directory) / "KILN.toml").read_text())["package"].get("dependencies", [])
+            runtime_declared = "gcc-runtime" in declared
             for path in Path(directory).rglob("*"):
                 if path.is_symlink() or not path.is_file():
                     continue
@@ -26,7 +30,7 @@ def main() -> int:
                         continue
                 out = subprocess.run(["readelf", "-d", str(path)], capture_output=True, text=True).stdout
                 for needed in re.findall(r"Shared library: \[([^]]+)\]", out):
-                    if needed.startswith(("libgcc_s", "libstdc++")):
+                    if needed.startswith(("libgcc_s", "libstdc++")) and not runtime_declared:
                         print(f"{package.name}: {path.relative_to(directory)} needs undeclared GCC runtime {needed}")
                         bad += 1
                     if needed.startswith("/"):
