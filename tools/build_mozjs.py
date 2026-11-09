@@ -112,7 +112,9 @@ def main() -> int:
     # js/src/configure (not the top-level one) forces the standalone JS project. Run from an empty
     # object directory outside the source tree.
     run(str(top / "js/src/configure"), "--prefix=/usr", "--enable-optimize", "--disable-debug",
-        "--disable-js-shell", "--disable-tests", "--enable-shared-js", "--disable-jemalloc",
+        # Do NOT pass --disable-js-shell: js/src/moz.build only adds the "rust" directory (the jsrust
+        # library the engine needs) when the shell is enabled. The shell is dropped after install.
+        "--disable-tests", "--enable-shared-js", "--disable-jemalloc",
         "--without-system-icu", "--without-system-nspr", "--without-system-zlib",
         cwd=obj, env=env)
     run("make", f"-j{args.jobs}", cwd=obj, env=env)
@@ -124,8 +126,8 @@ def main() -> int:
     for path in libs:
         if path.is_file() and not path.is_symlink():
             run("strip", "--strip-unneeded", str(path))
-    # The static archive and the -config script are not needed at runtime or by gjs.
-    for extra in list((stage / "usr/lib").glob("*.a")) + list((stage / "usr/bin").glob("js*-config")):
+    # The static archive, the shell and the -config script are not needed at runtime or by gjs.
+    for extra in list((stage / "usr/lib").glob("*.a")) + list((stage / "usr/bin").glob("js*")):
         extra.unlink()
 
     runtime_version, _ = package_gcc_runtime(args.output, work)
