@@ -29,7 +29,7 @@ from tools.build_graphics_packages import manifest, python_wheel, require_glibc_
 import tools.build_desktop_libraries as desktop
 
 
-OWNED = {"meldra-session": "0.1.0"}   # built from this repository, so there is no upstream pin
+OWNED = {"meldra-session": "0.1.0", "gi-typelibs": "1.86.0"}   # built from this repository, so there is no upstream pin
 
 
 def pin(lock_data: dict, name: str) -> dict:
@@ -460,6 +460,22 @@ def gnome_shell_build(pkg: Package, lock: dict, cache: Path, work: Path, output:
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
+def gi_typelibs_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """The generic typelibs that ship with gobject-introspection (GL, DBus, cairo, freetype2, fontconfig, libxml2).
+
+    Mutter's and Pango's introspection data depend on them, and the target builds of those libraries
+    do not install them. They are compiled by the native g-ir-compiler from GI's own .gir files."""
+    unit = work / pkg.name
+    stage = unit / "package/root"
+    target = stage / "usr/lib/girepository-1.0"
+    target.mkdir(parents=True)
+    source_dir = HOST_GI.resolve() / "lib/girepository-1.0"
+    wanted = ("GL-1.0", "DBus-1.0", "cairo-1.0", "freetype2-2.0", "fontconfig-2.0", "libxml2-2.0")
+    for name in wanted:
+        shutil.copy2(source_dir / f"{name}.typelib", target / f"{name}.typelib")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
 def session_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     """meldra-session (init/meldra-session.c): compiled against the target sysroot with Hearth's warning level."""
     unit = work / pkg.name
@@ -476,6 +492,10 @@ def session_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Pat
          "-lpam"], check=True)
     require_glibc_elf(binary)
     shutil.copy2("init/pam.d/meldra-session", stage / "etc/pam.d/meldra-session")
+    (stage / "usr/libexec/meldra").mkdir(parents=True)
+    start = stage / "usr/libexec/meldra/start-gnome"
+    shutil.copy2("init/start-gnome.sh", start)
+    start.chmod(0o755)
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
@@ -828,6 +848,7 @@ PACKAGES = [
         pattern="libpam.so.0.*",
     ),
     Package("meldra-session", ("glibc", "linux-pam", "libxcrypt", "elogind"), kind="custom"),
+    Package("gi-typelibs", ("glibc", "glib"), kind="custom"),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
@@ -1153,7 +1174,9 @@ def main() -> int:
                     continue
                 print(f"==> {pkg.name} {desktop.VERSIONS[pkg.name]}", flush=True)
                 lock = pin(lock_data, pkg.name)
-                if pkg.name == "meldra-session":
+                if pkg.name == "gi-typelibs":
+                    gi_typelibs_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.name == "meldra-session":
                     session_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.name == "gnome-shell":
                     gnome_shell_build(pkg, lock, args.cache, work, args.output)

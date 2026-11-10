@@ -1,0 +1,2 @@
+command=/bin/mkdir -p /home/meldra && /bin/mount -t tmpfs -o mode=0700,uid=1000,gid=1000 tmpfs /home/meldra
+respawn=no

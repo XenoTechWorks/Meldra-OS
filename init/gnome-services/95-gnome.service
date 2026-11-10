@@ -1,0 +1,2 @@
+command=until /usr/bin/loginctl list-seats >/dev/null 2>&1; do /bin/sleep 0.3; done; exec /usr/bin/meldra-session meldra tty1 /usr/libexec/meldra/start-gnome
+respawn=no

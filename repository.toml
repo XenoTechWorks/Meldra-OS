@@ -549,3 +549,9 @@ name = "meldra-session"
 version = "0.1.0"
 status = "built"
 dependencies = ["glibc", "linux-pam", "libxcrypt", "elogind"]
+
+[[package]]
+name = "gi-typelibs"
+version = "1.86.0"
+status = "built"
+dependencies = ["glibc", "glib"]

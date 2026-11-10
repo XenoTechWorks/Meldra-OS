@@ -1,0 +1,2 @@
+command=/bin/mkdir -p /sys/fs/cgroup && /bin/mount -t cgroup2 none /sys/fs/cgroup
+respawn=no
