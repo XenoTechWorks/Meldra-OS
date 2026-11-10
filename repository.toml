@@ -555,3 +555,57 @@ name = "gi-typelibs"
 version = "1.86.0"
 status = "built"
 dependencies = ["glibc", "glib"]
+
+[[package]]
+name = "accountsservice"
+version = "26.27.3"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "polkit", "json-c", "elogind", "dbus", "libxcrypt", "expat", "libcap", "util-linux", "eudev", "duktape"]
+
+[[package]]
+name = "dconf"
+version = "51.0"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "dbus", "expat"]
+
+[[package]]
+name = "gdm"
+version = "50.3"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libgudev", "eudev", "json-glib", "accountsservice", "polkit", "elogind", "linux-pam", "libxcrypt", "dbus", "expat", "libcap", "util-linux", "duktape", "json-c", "dconf"]
+
+[[package]]
+name = "geoclue"
+version = "2.8.2"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libsoup", "libpsl", "nghttp2", "sqlite", "libxml2", "json-glib", "dbus"]
+
+[[package]]
+name = "geocode-glib"
+version = "3.26.4"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libsoup", "libpsl", "nghttp2", "sqlite", "libxml2", "json-glib"]
+
+[[package]]
+name = "ibus"
+version = "1.5.35"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "dbus", "json-glib", "iso-codes", "xkeyboard-config", "libxkbcommon", "libxml2"]
+
+[[package]]
+name = "json-c"
+version = "0.19"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libgweather"
+version = "4.4.4"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libsoup", "libpsl", "nghttp2", "sqlite", "libxml2", "json-glib", "geocode-glib", "gdk-pixbuf", "libpng"]
+
+[[package]]
+name = "upower"
+version = "1.91.5"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libgudev", "eudev"]

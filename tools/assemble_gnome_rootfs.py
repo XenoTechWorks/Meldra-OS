@@ -31,7 +31,7 @@ from tools.assemble_rootfs import dependency_order, package_manifest, write_base
 ROOTS = (
     "hearth", "busybox", "kiln", "eudev", "dbus", "elogind", "linux-pam", "meldra-session",
     "gnome-shell", "gnome-backgrounds", "gnome-classic-favorites", "dejavu-fonts", "xkeyboard-config",
-    "gsettings-desktop-schemas", "gcc-runtime", "glycin", "gi-typelibs",
+    "gsettings-desktop-schemas", "gcc-runtime", "glycin", "gi-typelibs", "accountsservice", "gdm", "dconf",
 )
 
 PASSWD = (
@@ -42,7 +42,7 @@ PASSWD = (
 GROUP = (
     "root:x:0:\nkmem:x:2:\ntty:x:5:\ndisk:x:6:\nlp:x:7:\ndialout:x:18:\n"
     "video:x:27:meldra\ninput:x:28:meldra\naudio:x:29:meldra\nrender:x:104:meldra\nclock:x:105:\n"
-    "messagebus:x:81:\nmeldra:x:1000:\n"
+    "messagebus:x:81:\nmeldra:x:1000:\ncdrom:x:11:\nkvm:x:24:\n"
 )
 # Services of the base Hearth package that the GNOME image replaces: seatd (elogind is the seat manager
 # here) and the getty on tty1 (the session owns that VT).

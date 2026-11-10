@@ -23,7 +23,8 @@ def main() -> int:
     args = ap.parse_args()
     cache = json.load(urllib.request.urlopen(f"{BASE}/{args.module}/cache.json", timeout=30))
     versions, files = cache[2][args.module], cache[1][args.module]
-    stable = [v for v in versions if re.fullmatch(r"[0-9.]+", v)]
+    # GNOME numbers its pre-releases x.y.90 and up (alpha/beta/rc); those are not stable releases.
+    stable = [v for v in versions if re.fullmatch(r"[0-9.]+", v) and not re.search(r"\.9[0-9]$", v)]
     if args.series:
         stable = [v for v in stable if v == args.series or v.startswith(args.series + ".")]
     if not stable:

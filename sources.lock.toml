@@ -534,3 +534,64 @@ version = "4.5.2"
 url = "https://github.com/besser82/libxcrypt/releases/download/v4.5.2/libxcrypt-4.5.2.tar.xz"
 sha256 = "71513a31c01a428bccd5367a32fd95f115d6dac50fb5b60c779d5c7942aec071"
 role = "libcrypt, which this glibc does not ship and Linux-PAM requires; GitHub-recorded digest"
+
+[gnome.accountsservice]
+version = "26.27.3"
+url = "https://deb.debian.org/debian/pool/main/a/accountsservice/accountsservice_26.27.3.orig.tar.bz2"
+sha256 = "77e26080fd644df3e339fef561bb77f901e43557dc73e620afb6c10789b9a9e8"
+role = "AccountsService typelib/library the Shell's JavaScript imports; Debian's orig tarball, checksum from Debian's source index"
+
+[gnome.json_c]
+version = "0.19"
+url = "https://github.com/json-c/json-c/releases/download/json-c-0.19-20260627/json-c-0.19-nodoc.tar.gz"
+sha256 = "704927172443309a8efeb162060bb215548e1286e5568514007dd2cc35a0a164"
+role = "JSON library accountsservice requires; GitHub-recorded digest"
+
+[gnome.gdm]
+version = "50.3"
+url = "https://download.gnome.org/sources/gdm/50/gdm-50.3.tar.xz"
+sha256 = "adac0710b8b797108ea40ea4573bd1a5e6d9b24e0a7990a994216e8dffe2d15e"
+role = "libgdm client library and typelib the Shell imports (the display manager itself is not used)"
+
+[gnome.dconf]
+version = "51.0"
+url = "https://download.gnome.org/sources/dconf/51/dconf-51.0.tar.xz"
+sha256 = "e65c1b7867f836faad9f9ee04acf5c5a6cae2bbc784833fe093207e0cb590248"
+role = "GSettings backend; also gives GDM's build its dconf compile step"
+
+[gnome.geocode_glib]
+version = "3.26.4"
+url = "https://download.gnome.org/sources/geocode-glib/3.26/geocode-glib-3.26.4.tar.xz"
+sha256 = "2d9a6826d158470449a173871221596da0f83ebdcff98b90c7049089056a37aa"
+role = "geocoding for libgweather"
+
+[gnome.libgweather]
+version = "4.4.4"
+url = "https://download.gnome.org/sources/libgweather/4.4/libgweather-4.4.4.tar.xz"
+sha256 = "7017677753cdf7d1fdc355e4bfcdb1eba8369793a8df24d241427a939cbf4283"
+role = "weather library (GWeather typelib the Shell requires)"
+
+
+[gnome.ibus]
+version = "1.5.35"
+url = "https://github.com/ibus/ibus/releases/download/1.5.35/ibus-1.5.35.tar.xz"
+sha256 = "5e6d888529a413c85773eafcdd3e73bf18a392a70eeb95bb3c9bfb358db7689c"
+role = "input method framework (IBus typelib the Shell requires); digest matches GitHub and Debian"
+
+[gnome.geoclue]
+version = "2.8.2"
+url = "https://deb.debian.org/debian/pool/main/g/geoclue-2.0/geoclue-2.0_2.8.2.orig.tar.bz2"
+sha256 = "d4d65933b704d4c8d4ca9747dc511b883e35099abe534c8560f2aab3017e4cd4"
+role = "location client library (Geoclue typelib the Shell requires; daemon not used); Debian's orig tarball"
+
+[gnome.upower]
+version = "1.91.5"
+url = "https://deb.debian.org/debian/pool/main/u/upower/upower_1.91.5.orig.tar.bz2"
+sha256 = "c465a1c7fc05d00ac2bc7321c19b9b7e479410d8392bd7eb3e714275729629fd"
+role = "power library (UPowerGlib typelib the Shell requires); Debian's orig tarball"
+
+[gnome.librsvg]
+version = "2.62.4"
+url = "https://download.gnome.org/sources/librsvg/2.62/librsvg-2.62.4.tar.xz"
+sha256 = "c982b8157a054b803493bf994d31e50105eb948dd8da6b4ab9734e8d392712a3"
+role = "SVG rendering (Rsvg typelib the Shell requires); Rust"

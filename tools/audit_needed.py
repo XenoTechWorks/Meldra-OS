@@ -21,6 +21,12 @@ def main() -> int:
         with tempfile.TemporaryDirectory() as directory, tarfile.open(package) as bundle:
             bundle.extractall(directory, filter="data")
             meta = tomllib.loads((Path(directory) / "KILN.toml").read_text())["package"]
+            for member in bundle.getnames():
+                parts = Path(member).parts
+                if len(parts) > 1 and parts[0] == "root" and (parts[1] in ("home", "tmp", "mnt") or "sysroot" in parts):
+                    print(f"{package.name}: file installed under a build path: {member}")
+                    bad += 1
+                    break
             # The gcc-runtime package is where libstdc++ and libgcc_s live; it may need its own pieces.
             runtime_declared = "gcc-runtime" in meta.get("dependencies", []) or meta["name"] == "gcc-runtime"
             for path in Path(directory).rglob("*"):

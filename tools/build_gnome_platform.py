@@ -42,7 +42,12 @@ def pin(lock_data: dict, name: str) -> dict:
 
 class Package:
     def __init__(self, name, deps, kind="meson", options=(), pattern=None, post=None, env=None,
-                 introspect=False, rust=False):
+                 introspect=False, rust=False, target_tools=None, host_python=False, patches=(),
+                 host_programs=()):
+        self.host_programs = tuple(host_programs)  # build-machine programs the sandbox lacks, run on the host
+        self.patches = tuple(patches)            # reviewed, hash-checked edits (see apply_recorded_patch)
+        self.host_python = host_python           # build scripts import gi (PyGObject): run python3 on the host
+        self.target_tools = target_tools or {}   # build-time programs run from the target sysroot
         self.introspect = introspect
         self.rust = rust
         self.name = name
@@ -357,7 +362,29 @@ _kiln_build = build
 
 def checked_build(package: Path, archive: Path):
     """Every package passes through here: sysroot-prefixed strings baked into binaries are corrected first."""
-    for line in strip_any_sysroot_prefix(Path(package) / "root"):
+    root = Path(package) / "root"
+    # pkg-config hands meson directories with the build sysroot prepended, so a package can install files to
+    # <build>/sysroot/usr/share/... inside its stage. The part after "/sysroot" is exactly the directory it
+    # meant, so move the file there (logged), and fail for anything else installed under a build path.
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        parts = path.relative_to(root).parts
+        if "sysroot" in parts[:-1]:
+            intended = root.joinpath(*parts[parts.index("sysroot") + 1:])
+            intended.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(path), str(intended))
+            print(f"relocated: {'/'.join(parts[parts.index('sysroot') + 1:])} (was under the build sysroot)", flush=True)
+    for top in ("home", "tmp", "mnt"):
+        leftover = root / top
+        if leftover.is_dir() and not any(f.is_file() or f.is_symlink() for f in leftover.rglob("*")):
+            shutil.rmtree(leftover)
+    misplaced = [str(path.relative_to(root)) for path in root.rglob("*")
+                 if path.parts[len(root.parts):len(root.parts) + 1] in (("home",), ("tmp",), ("mnt",))
+                 or "sysroot" in path.relative_to(root).parts]
+    if misplaced:
+        raise RuntimeError("files were installed under a build path: " + ", ".join(misplaced[:6]))
+    for line in strip_any_sysroot_prefix(root):
         print(f"baked path fixed: {line}", flush=True)
     return _kiln_build(package, archive)
 
@@ -797,7 +824,7 @@ PACKAGES = [
                  "-Dintrospection=true", "-Ddocs=false", "-Dtests=disabled", "-Dcogl_tests=false",
                  "-Dclutter_tests=false", "-Dmutter_tests=false", "-Dinstalled_tests=false",
                  "-Dbash_completion=false", "-Ddevkit=disabled", "-Degl_device=false", "-Dwayland_eglstream=false",
-                 "-Dverbose=false", "-Dudev=true", "-Dgles2=true", "-Degl=true", "-Dopengl=false"),
+                 "-Dverbose=false", "-Dudev=true", "-Dudev_dir=/usr/lib/udev", "-Dgles2=true", "-Degl=true", "-Dopengl=false"),
         pattern="libmutter-18.so.0.*",
     ),
     Package(
@@ -849,6 +876,98 @@ PACKAGES = [
     ),
     Package("meldra-session", ("glibc", "linux-pam", "libxcrypt", "elogind"), kind="custom"),
     Package("gi-typelibs", ("glibc", "glib"), kind="custom"),
+    Package(
+        "json-c", ("glibc",), kind="cmake",
+        options=("-DBUILD_SHARED_LIBS=ON", "-DBUILD_STATIC_LIBS=OFF", "-DBUILD_TESTING=OFF",
+                 "-DDISABLE_WERROR=ON", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"),
+        pattern="libjson-c.so.5.*",
+    ),
+    Package(
+        "accountsservice", ("glibc", "glib", "libffi", "pcre2", "zlib", "polkit", "json-c", "elogind", "dbus",
+                            "libxcrypt", "expat", "libcap", "util-linux", "eudev", "duktape"),
+        introspect=True,
+        options=("-Delogind=true", "-Dintrospection=true", "-Dvapi=false", "-Ddocbook=false", "-Dgtk_doc=false",
+                 "-Dtests=false", "-Dadmin_group=wheel", "-Dminimum_uid=1000", "-Dlibxcrypt=true",
+                 "-Dsystemdsystemunitdir=/usr/lib/systemd/system", "--sysconfdir=/etc", "--localstatedir=/var"),
+        pattern="libaccountsservice.so.1.*",
+    ),
+    Package(
+        "dconf", ("glibc", "glib", "libffi", "pcre2", "zlib", "dbus", "expat"),
+        options=("-Dbash_completion=false", "-Dman=false", "-Dgtk_doc=false", "-Dvapi=false",
+                 "-Dsystemduserunitdir=/usr/lib/systemd/user"),
+        pattern="libdconf.so.1.*",
+    ),
+    Package(
+        "gdm", ("glibc", "glib", "libffi", "pcre2", "zlib", "libgudev", "eudev", "json-glib", "accountsservice",
+                "polkit", "elogind", "linux-pam", "libxcrypt", "dbus", "expat", "libcap", "util-linux", "duktape",
+                "json-c", "dconf"),
+        introspect=True, target_tools={"dconf": "/usr/bin/dconf"},
+        options=("-Dx11-support=false", "-Dlogind-provider=elogind", "-Dplymouth=disabled", "-Dselinux=disabled",
+                 "-Dlibaudit=disabled", "-Dsystemd-journal=false", "-Dgdm-xsession=false",
+                 "-Dsystemdsystemunitdir=/usr/lib/systemd/system", "-Dsystemduserunitdir=/usr/lib/systemd/user",
+                 "-Dpam-mod-dir=/usr/lib/security", "-Ddbus-sys=/usr/share/dbus-1/system.d",
+                 "--sysconfdir=/etc", "--localstatedir=/var"),
+        pattern="libgdm.so.1.*",
+    ),
+    Package(
+        "upower", ("glibc", "glib", "libffi", "pcre2", "zlib", "libgudev", "eudev"), introspect=True,
+        options=("-Dman=false", "-Dgtk-doc=false", "-Dintrospection=enabled", "-Didevice=disabled",
+                 "-Dpolkit=disabled", "-Dos_backend=linux", "-Dinstalled_tests=false",
+                 "-Dudevrulesdir=/usr/lib/udev/rules.d", "-Dudevhwdbdir=/usr/lib/udev/hwdb.d",
+                 "-Dhistorydir=/var/lib/upower", "-Dstatedir=/var/lib/upower", "-Dzshcompletiondir=no",
+                 "-Dsystemdsystemunitdir=no", "--sysconfdir=/etc", "--localstatedir=/var"),
+        pattern="libupower-glib.so.3.*",
+    ),
+    Package(
+        "geoclue", ("glibc", "glib", "libffi", "pcre2", "zlib", "libsoup", "libpsl", "nghttp2", "sqlite", "libxml2", "json-glib", "dbus"), introspect=True,
+        options=("-Dlibgeoclue=true", "-Dintrospection=true", "-Dvapi=false", "-Dgtk-doc=false",
+                 "-Dwifi-source=false", "-D3g-source=false", "-Dcdma-source=false", "-Dmodem-gps-source=false",
+                 "-Dnmea-source=false", "-Dstatic-source=false", "-Dip-source=false", "-Dcompass=false",
+                 "-Denable-backend=false", "-Ddemo-agent=false", "-Ddbus-sys-dir=/usr/share/dbus-1/system.d",
+                 "--sysconfdir=/etc", "--localstatedir=/var"),
+        pattern="libgeoclue-2.so.0.*",
+    ),
+    Package(
+        "geocode-glib", ("glibc", "glib", "libffi", "pcre2", "zlib", "libsoup", "libpsl", "nghttp2", "sqlite", "libxml2", "json-glib"), introspect=True,
+        options=("-Denable-introspection=true", "-Denable-gtk-doc=false", "-Denable-installed-tests=false",
+                 "-Dsoup2=false"),
+        pattern="libgeocode-glib-2.so.0.*",
+    ),
+    Package(
+        "libgweather", ("glibc", "glib", "libffi", "pcre2", "zlib", "libsoup", "libpsl", "nghttp2", "sqlite", "libxml2", "json-glib", "geocode-glib", "gdk-pixbuf", "libpng"), introspect=True, host_python=True,
+        patches=(("meson.build", "39905bf86281688c88d175c3d25af1200fa44df0edec782815e5bbf453ad1151",
+                  "e2e885bdabe63236b96219e0c1f995b102bad7906a124dab1132004206f0fa6d",
+                  "build_gir = get_option('introspection') and g_ir_scanner.found() and not meson.is_cross_build()\n",
+                  "build_gir = get_option('introspection') and g_ir_scanner.found()\n",
+                  "libgweather skips GWeather-4.0.typelib in any cross build. This build is cross in name only "
+                  "(same architecture, run through the target loader) and GNOME Shell requires the typelib."),),
+        options=("-Dintrospection=true", "-Dtests=false", "-Dgtk_doc=false", "-Denable_vala=false",
+                 "-Dsoup2=false", "-Dzoneinfo_dir=/usr/share/zoneinfo"),
+        pattern="libgweather-4.so.0.*",
+    ),
+    Package(
+        "ibus", ("glibc", "glib", "libffi", "pcre2", "zlib", "dbus", "json-glib", "iso-codes", "xkeyboard-config", "libxkbcommon", "libxml2"),
+        introspect=True, host_programs=("valac", "vapigen"),
+        patches=(("meson.build", "4c83485de6e14c703aadc553c860ded38e2ec7e12ed5f9a444eb4294b94ba975",
+                  "586259113ff4f14b4bbfbd4a9860830a07bae92afc48508a289e0b101d4cf55d",
+                  "enable_pygobject = pygobject_dep.found()\nif enable_pygobject\n",
+                  "enable_pygobject = pygobject_dep.found()\npyoverridesdir = ''\nif enable_pygobject\n",
+                  "IBus's build summary reads pyoverridesdir, which is only defined when PyGObject is found; "
+                  "define it so a build without PyGObject configures. It changes no build output."),),
+        options=("-Dtests=false", "-Dxim=disabled", "-Dwayland=disabled", "-Dappindicator=false", "-Dengine=false",
+                 "-Dui=false", "-Dsetup=false", "-Dsystemd-services=disabled", "-Dlibnotify=false", "-Ddconf=disabled",
+                 "-Dgtk3=false", "-Dgtk4=false", "-Dunicode-dict=false", "-Demoji-dict=false", "-Dvapi=enabled", "-Dgtk-doc=false",
+                 "--sysconfdir=/etc", "--localstatedir=/var"),
+        pattern="libibus-1.0.so.5.*",
+    ),
+    Package(
+        "librsvg", ("glibc", "glib", "libffi", "pcre2", "zlib", "cairo", "pixman", "freetype", "fontconfig", "libpng", "expat", "harfbuzz", "fribidi",
+                    "pango", "gdk-pixbuf", "libxml2", "libtiff", "libjpeg-turbo", "gcc-runtime"),
+        introspect=True, rust=True,
+        options=("-Dintrospection=enabled", "-Dpixbuf=enabled", "-Dpixbuf-loader=enabled", "-Dvala=disabled",
+                 "-Ddocs=disabled", "-Dtests=false", "-Davif=disabled"),
+        pattern="librsvg-2.so.2.*",
+    ),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
@@ -932,7 +1051,8 @@ PACKAGES = [
         options=("-Dpam=true", "-Dacl=disabled", "-Daudit=disabled", "-Dselinux=disabled",
                  "-Dman=disabled", "-Dhtml=disabled", "-Dtests=false", "-Dpolkit=false",
                  "-Dsmack=false", "-Dcgroup-controller=elogind", "-Ddefault-hierarchy=unified",
-                 "-Dutmp=false", "-Dpamlibdir=/usr/lib/security"),
+                 "-Dutmp=false", "-Dpamlibdir=/usr/lib/security", "-Ddbuspolicydir=/usr/share/dbus-1/system.d",
+                 "-Ddbussystemservicedir=/usr/share/dbus-1/system-services", "-Dudevrulesdir=/usr/lib/udev/rules.d"),
         pattern="libelogind.so.0.*",
     ),
 ]
@@ -1050,8 +1170,84 @@ def build_host_libxcvt(lock: dict, cache: Path, work: Path) -> None:
     os.environ["LD_LIBRARY_PATH"] = f"{prefix}/lib{os.pathsep}{os.environ.get('LD_LIBRARY_PATH', '')}".rstrip(os.pathsep)
 
 
+def target_tool_wrappers(pkg: Package):
+    """Wrap programs that a build runs (for example `dconf compile`) so they execute from the target sysroot
+    through the target loader. Returns a cross-file hook that writes the wrappers and puts them on PATH."""
+    def hook(original):
+        def make(work: Path, sysroot: Path) -> Path:
+            path = original(work, sysroot)
+            root = sysroot.resolve()
+            tools = work / "target-tools"
+            tools.mkdir(exist_ok=True)
+            for name, program in pkg.target_tools.items():
+                wrapper = tools / name
+                wrapper.write_text(
+                    f'#!/bin/sh\nexport GCONV_PATH="{root}/usr/lib64/gconv" GSETTINGS_BACKEND=memory\n'
+                    f'exec "{root}/lib64/ld-linux-x86-64.so.2" --library-path '
+                    f'"{root}/lib64:{root}/usr/lib64:{root}/usr/lib:{root}/usr/lib/pulseaudio" '
+                    f'"{root}/{program.lstrip("/")}" "$@"\n')
+                wrapper.chmod(0o755)
+            os.environ["PATH"] = f"{tools}{os.pathsep}{os.environ['PATH']}"
+            return path
+        return make
+    return hook
+
+
+def host_python_wrapper(work: Path) -> None:
+    """A python3 on PATH that sends only scripts needing PyGObject (the build sandbox lacks it) to the host.
+
+    Every other script, including g-ir-scanner whose compiled extension matches this Python, keeps running here."""
+    directory = work / "host-python"
+    directory.mkdir(exist_ok=True)
+    wrapper = directory / "python3"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        '  *gen_locations_variant.py) exec flatpak-spawn --host python3 "$@" ;;\n'
+        "esac\n"
+        f'exec {sys.executable} "$@"\n')
+    wrapper.chmod(0o755)
+    os.environ["PATH"] = f"{directory}{os.pathsep}{os.environ['PATH']}"
+
+
+def host_program_wrappers(work: Path, names: tuple[str, ...]) -> None:
+    directory = work / "host-programs"
+    directory.mkdir(exist_ok=True)
+    for name in names:
+        wrapper = directory / name
+        wrapper.write_text(f'#!/bin/sh\nexec flatpak-spawn --host {name} "$@"\n')
+        wrapper.chmod(0o755)
+    os.environ["PATH"] = f"{directory}{os.pathsep}{os.environ['PATH']}"
+    # Meson writes its probe files to the temp directory; the sandbox's /tmp is invisible to the host, so
+    # put it in the shared build tree for programs that run on the host.
+    shared_tmp = work / "tmp"
+    shared_tmp.mkdir(exist_ok=True)
+    os.environ["TMPDIR"] = str(shared_tmp)
+
+
 def meson_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    if pkg.host_python:
+        host_python_wrapper(work)
+    if pkg.host_programs:
+        host_program_wrappers(work, pkg.host_programs)
+    original_source = desktop.source
+    if pkg.patches:
+        def patched_source(lock_entry: dict, cache_dir: Path, destination: Path) -> Path:
+            top = original_source(lock_entry, cache_dir, destination)
+            for relative, before, after, old, new, why in pkg.patches:
+                apply_recorded_patch(top / relative, before, after, old, new, why)
+            return top
+        desktop.source = patched_source
+    try:
+        _meson_build_inner(pkg, lock, cache, work, output)
+    finally:
+        desktop.source = original_source
+
+
+def _meson_build_inner(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     original = desktop.cross_file
+    if pkg.target_tools:
+        desktop.cross_file = target_tool_wrappers(pkg)(desktop.cross_file)
     if pkg.rust:
         desktop.cross_file = rust_cross_file(desktop.cross_file)
     if pkg.introspect:

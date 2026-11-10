@@ -26,7 +26,7 @@ NAMESPACES = (
     ("St", "18"), ("Shell", "18"), ("Gvc", "1.0"), ("Shew", "0"),
     ("Polkit", "1.0"), ("PolkitAgent", "1.0"), ("Gcr", "4"), ("Gck", "2"),
     ("GnomeDesktop", "4.0"), ("Gly", "2"), ("GDesktopEnums", "3.0"), ("GUdev", "1.0"),
-    ("Json", "1.0"), ("Colord", "1.0"),
+    ("Json", "1.0"), ("Colord", "1.0"), ("AccountsService", "1.0"), ("Gdm", "1.0"),
 )
 
 

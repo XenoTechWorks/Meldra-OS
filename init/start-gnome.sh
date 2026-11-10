@@ -10,5 +10,8 @@ export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast
 export GSETTINGS_BACKEND=memory
 export GIO_USE_VFS=local
 export GIO_USE_VOLUME_MONITOR=unix
+# No accessibility bus yet: without this, waiting for org.a11y.Bus stalls startup for 25 seconds.
+export NO_AT_BRIDGE=1
+export GTK_A11Y=none
 # The session bus is created here so the Shell and everything it activates share one.
-exec /usr/bin/dbus-run-session -- /usr/bin/gnome-shell --wayland --no-x11
+exec /usr/bin/dbus-run-session -- /usr/bin/gnome-shell --wayland --display-server
