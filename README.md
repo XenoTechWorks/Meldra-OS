@@ -7,7 +7,7 @@
 ![Developer Preview](https://img.shields.io/badge/status-developer_preview-f4a261)
 ![Kernel](https://img.shields.io/badge/kernel-6.18.62--meldra-5c7cfa)
 ![libc](https://img.shields.io/badge/userspace-glibc_2.44-7b61ff)
-![Desktop](https://img.shields.io/badge/desktop-Labwc_boots-38b000)
+![Desktop](https://img.shields.io/badge/desktop-Labwc_and_GNOME_Shell_boot-38b000)
 
 </div>
 
@@ -31,6 +31,23 @@ Meldra now boots its own kernel and userspace in QEMU, starts **Hearth** as PID
 
 <p align="center"><em>The first real compositor frame from Meldra OS. The next visual milestone adds the wallpaper, terminal, panel, and launcher.</em></p>
 
+## GNOME Shell boots
+
+Meldra also boots **GNOME Shell 50.6** as a Wayland display server in QEMU: Hearth starts elogind and D-Bus, a
+PAM session is opened for an unprivileged user, and Mutter drives the virtual GPU (software rendering).
+
+<p align="center">
+  <img src="docs/screenshots/gnome-first-frame.png" width="720" alt="Meldra OS running GNOME Shell: the Activities Overview with the top bar, search field and workspace thumbnails">
+</p>
+
+<p align="center"><em>The first GNOME Shell frame on Meldra OS (Activities Overview, taken through QEMU's screendump). It is
+unfinished: the wallpaper is a flat colour because the image loader's sandbox (bubblewrap) is not built yet, and
+there are no icons because no icon theme is installed.</em></p>
+
+Not yet working or not yet tested: input (the frame was captured, not driven), the login screen (the session starts
+directly, not through GDM), icons, the wallpaper, polkit, UPower, accountsservice, geoclue and the other system
+daemons the Shell talks to, networking, audio, and hardware acceleration.
+
 ## What works today
 
 | Area | State | Implementation |
@@ -44,7 +61,7 @@ Meldra now boots its own kernel and userspace in QEMU, starts **Hearth** as PID
 | Text and UI | Built | FreeType, Fontconfig, HarfBuzz, FriBidi, Cairo, Pango |
 | Window manager | Running | Labwc 0.9.1 on virtio-vga in QEMU |
 | Desktop assets | Packaged | Current GNOME backgrounds plus Aqua, Curves, and Sunset |
-| GNOME desktop | Planned | Mutter, GNOME Shell, GDM, settings, and portals remain |
+| GNOME desktop | Shell boots | Mutter and GNOME Shell 50.6 start in QEMU (software rendering); GDM login, settings, portals and the system daemons remain |
 
 Meldra is a developer preview, not yet an installable daily-driver OS. Audio,
 network management, graphical login, a terminal, a panel, and the full GNOME

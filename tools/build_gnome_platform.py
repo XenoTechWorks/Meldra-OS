@@ -36,6 +36,7 @@ def pin(lock_data: dict, name: str) -> dict:
     """A package's pin: the gnome section first, then the older desktop section."""
     if name in OWNED:
         return {"version": OWNED[name]}
+    name = {"libltdl": "libtool"}.get(name, name)   # libltdl is built from the libtool tarball
     key = name.replace("-", "_")
     return lock_data["gnome"][key] if key in lock_data["gnome"] else lock_data["desktop"][key]
 
@@ -125,6 +126,8 @@ def meson_data_build(pkg: Package, lock: dict, cache: Path, work: Path, output: 
         unit = work / pkg.name
         unit.mkdir()
         upstream = source(lock, cache, unit / "source")
+        for relative, before, after, old_text, new_text, why in pkg.patches:
+            apply_recorded_patch(upstream / relative, before, after, old_text, new_text, why)
         sysroot = desktop.make_sysroot(output, unit, pkg.deps)
         cross = desktop.cross_file(unit, sysroot)
         build_dir, stage = unit / "build", unit / "package/root"
@@ -218,6 +221,29 @@ def nss_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -
         raise RuntimeError("libnss3 not installed")
     require_glibc_elf(library)
     build(manifest(stage, pkg.name, version, pkg.deps), output / f"{pkg.name}-{version}.kiln")
+
+
+def ltdl_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """libltdl from the libtool tarball: its own configure lives in the libltdl/ subdirectory."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    build_dir, stage = unit / "build", unit / "package/root"
+    build_dir.mkdir()
+    env = os.environ.copy()
+    env.update({"CC": f"gcc --sysroot={root}", "CFLAGS": "-O2 -pipe"})
+    subprocess.run([str(upstream / "libltdl/configure"), "--build=x86_64-pc-linux-gnu",
+                    "--host=x86_64-unknown-linux-gnu", "--prefix=/usr", "--libdir=/usr/lib", "--disable-static",
+                    "--enable-shared", "--enable-ltdl-install"], cwd=build_dir, env=env, check=True)
+    subprocess.run(["make"], cwd=build_dir, env=env, check=True)
+    subprocess.run(["make", "install", f"DESTDIR={stage}"], cwd=build_dir, env=env, check=True)
+    library = next((stage / "usr/lib").glob(pkg.pattern), None)
+    if library is None:
+        raise RuntimeError(f"{pkg.name} library not installed: {pkg.pattern}")
+    require_glibc_elf(library)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
 def icu_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
@@ -386,6 +412,11 @@ def checked_build(package: Path, archive: Path):
         raise RuntimeError("files were installed under a build path: " + ", ".join(misplaced[:6]))
     for line in strip_any_sysroot_prefix(root):
         print(f"baked path fixed: {line}", flush=True)
+    # libtool archives record absolute install paths that do not exist inside another package's sysroot, which
+    # breaks anything linking through them. Nothing at runtime reads them, so none are shipped.
+    for archive_file in list(root.rglob("*.la")):
+        if archive_file.is_file() or archive_file.is_symlink():
+            archive_file.unlink()
     return _kiln_build(package, archive)
 
 
@@ -968,6 +999,55 @@ PACKAGES = [
                  "-Ddocs=disabled", "-Dtests=false", "-Davif=disabled"),
         pattern="librsvg-2.so.2.*",
     ),
+    Package("libltdl", ("glibc",), kind="custom", pattern="libltdl.so.7.*"),
+    Package(
+        "libogg", ("glibc",), kind="autotools",
+        options=("--disable-static", "--enable-shared"),
+        pattern="libogg.so.0.*",
+    ),
+    Package(
+        "libvorbis", ("glibc", "libogg"), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--disable-docs", "--disable-examples", "--disable-oggtest"),
+        pattern="libvorbisfile.so.3.*",
+    ),
+    Package(
+        "libcanberra", ("glibc", "libltdl", "libvorbis", "libogg"), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--disable-alsa", "--disable-oss", "--disable-pulse",
+                 "--disable-udev", "--disable-gstreamer", "--disable-gtk", "--disable-gtk3", "--disable-tdb",
+                 "--disable-lynx"),
+        pattern="libcanberra.so.0.*",
+    ),
+    Package(
+        "libnotify", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "libpng", "libtiff", "libjpeg-turbo"), introspect=True,
+        options=("-Dtests=false", "-Dman=false", "-Dgtk_doc=false", "-Ddocbook_docs=disabled",
+                 "-Dintrospection=enabled"),
+        pattern="libnotify.so.4.*",
+    ),
+    Package(
+        "gnome-settings-daemon", ("glibc", "glib", "libffi", "pcre2", "zlib", "gtk", "pango", "harfbuzz", "fribidi", "cairo", "pixman", "freetype", "fontconfig", "libpng", "libtiff", "libjpeg-turbo", "gdk-pixbuf", "graphene", "libepoxy", "libxkbcommon", "wayland", "wayland-protocols", "mesa", "libdrm", "expat", "libxml2", "libsoup", "libpsl", "nghttp2", "sqlite", "json-glib", "gnome-desktop", "gsettings-desktop-schemas", "libgweather",
+                                 "geocode-glib", "geoclue", "libcanberra", "libltdl", "libvorbis", "libogg",
+                                 "libnotify", "pulseaudio", "libsndfile", "polkit", "upower", "elogind", "libgudev",
+                                 "eudev", "dbus", "libcap", "util-linux", "linux-pam", "libxcrypt", "iso-codes",
+                                 "xkeyboard-config", "duktape", "libseccomp", "alsa-lib"),
+        kind="data", introspect=True,
+        patches=(("meson.build", "09634448049c63ab5b4760d286129d9e824d8627bc28c1ef61986ee33c967162",
+                  "4ea740539cb5062c9e18f377cd0575ce56dec0c0aca8ee14cfc2f00ac0854fab",
+                  "assert(enable_network_manager or not host_is_linux, 'NetworkManager support is not optional on Linux platforms')\n",
+                  "",
+                  "gnome-settings-daemon forces NetworkManager on Linux for its Sharing plugin. The code supports "
+                  "HAVE_NETWORK_MANAGER=false (it is what other systems use); Meldra has no NetworkManager yet."),),
+        options=("-Dsystemd=false", "-Delogind=true", "-Dalsa=true", "-Dgudev=true", "-Dcups=false",
+                 "-Dnetwork_manager=false", "-Drfkill=true", "-Dsmartcard=false", "-Dusb-protection=false",
+                 "-Dwwan=false", "-Dgcr3=false", "-Dcolord=false", "-Dxwayland=false", "-Dsystemd-units=false",
+                 "-Dudev_dir=/usr/lib/udev", "--sysconfdir=/etc", "--localstatedir=/var"),
+        pattern="usr/libexec/gsd-power",
+    ),
+    Package(
+        "alsa-lib", ("glibc",), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--disable-python", "--disable-topology", "--disable-alisp",
+                 "--without-debug", "--disable-aload", "--disable-old-symbols"),
+        pattern="libasound.so.2.*",
+    ),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
@@ -1135,6 +1215,29 @@ def rust_cross_file(original):
         os.environ["PKG_CONFIG_LIBDIR"] = f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"
         return path
     return make
+
+
+HOST_CARGO_C = Path("build/host-tools/cargo-c")
+
+
+def ensure_host_cargo_c(lock: dict, cache: Path) -> None:
+    """cargo-cbuild builds C-ABI libraries from Rust crates (librsvg). Upstream's static musl binary, verified
+    against the pinned SHA-256, is a build-time host tool only; nothing from it is shipped."""
+    import hashlib
+    import tarfile
+    prefix = HOST_CARGO_C.resolve()
+    if not (prefix / "bin/cargo-cbuild").is_file():
+        archive = cache / Path(lock["url"]).name
+        if not archive.is_file():
+            raise RuntimeError(f"cargo-c archive missing: {archive} (run tools/pin_source.py)")
+        if hashlib.sha256(archive.read_bytes()).hexdigest() != lock["sha256"]:
+            raise RuntimeError("cargo-c archive does not match its pinned checksum")
+        (prefix / "bin").mkdir(parents=True, exist_ok=True)
+        with tarfile.open(archive) as bundle:
+            for member in bundle.getmembers():
+                if member.isfile() and "/" not in member.name:
+                    bundle.extract(member, prefix / "bin", filter="data")
+    os.environ["PATH"] = f"{prefix}/bin{os.pathsep}{os.environ['PATH']}"
 
 
 HOST_SASSC = Path("build/host-tools/sassc")
@@ -1344,6 +1447,8 @@ def main() -> int:
             build_host_libxcvt(locks["libxcvt"], args.cache, work)
             if "gnome-shell" in args.names:
                 build_host_sassc(locks, args.cache, work)
+            if "librsvg" in args.names:
+                ensure_host_cargo_c(lock_data["host_tools"]["cargo_c"], args.cache)
             # Build-time-only Python modules (templating), from pinned wheels.
             wheel_paths = []
             for tool in ("jinja2", "markupsafe", "docutils"):
@@ -1372,6 +1477,8 @@ def main() -> int:
                 lock = pin(lock_data, pkg.name)
                 if pkg.name == "gi-typelibs":
                     gi_typelibs_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.name == "libltdl":
+                    ltdl_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.name == "meldra-session":
                     session_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.name == "gnome-shell":

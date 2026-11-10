@@ -32,6 +32,7 @@ ROOTS = (
     "hearth", "busybox", "kiln", "eudev", "dbus", "elogind", "linux-pam", "meldra-session",
     "gnome-shell", "gnome-backgrounds", "gnome-classic-favorites", "dejavu-fonts", "xkeyboard-config",
     "gsettings-desktop-schemas", "gcc-runtime", "glycin", "gi-typelibs", "accountsservice", "gdm", "dconf",
+    "librsvg", "upower", "geoclue", "geocode-glib", "libgweather", "ibus", "gnome-settings-daemon",
 )
 
 PASSWD = (
@@ -78,7 +79,7 @@ def closure(packages: dict[str, tuple[Path, dict]], roots: tuple[str, ...]) -> l
 # Build-time files the running system never reads. Typelibs (.typelib), schemas, locales and icons stay.
 PRUNE_DIRS = ("usr/include", "usr/lib/pkgconfig", "usr/lib64/pkgconfig", "usr/share/pkgconfig", "usr/lib/cmake",
               "usr/share/gir-1.0", "usr/share/doc", "usr/share/man", "usr/share/info", "usr/share/gtk-doc",
-              "usr/share/aclocal", "usr/share/vala", "usr/share/gdb", "usr/share/bash-completion", "usr/share/xml",
+              "usr/share/aclocal", "usr/share/vala", "usr/share/gdb", "usr/share/bash-completion",
               "usr/share/i18n")
 
 
@@ -159,6 +160,16 @@ def main() -> int:
     schemas = root / "usr/share/glib-2.0/schemas"
     if schemas.is_dir():
         run_target(root, "/usr/bin/glib-compile-schemas", str(schemas))
+    query = root / "usr/bin/gdk-pixbuf-query-loaders"
+    cache = root / "usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+    if query.is_file():
+        result = subprocess.run([str(root / "lib64/ld-linux-x86-64.so.2"), "--library-path",
+                                 f"{root}/lib64:{root}/usr/lib64:{root}/usr/lib", str(query)],
+                                capture_output=True, text=True, check=True,
+                                env={**os.environ, "GDK_PIXBUF_MODULEDIR": str(root / "usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"),
+                                     "GCONV_PATH": f"{root}/usr/lib64/gconv"})
+        # The cache must name the modules by their installed path, not the build tree.
+        cache.write_text(result.stdout.replace(str(root), ""))
     ldconfig = root / "sbin/ldconfig"
     if ldconfig.is_file():
         (etc / "ld.so.cache").unlink(missing_ok=True)

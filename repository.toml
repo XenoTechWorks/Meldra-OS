@@ -609,3 +609,51 @@ name = "upower"
 version = "1.91.5"
 status = "built"
 dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libgudev", "eudev"]
+
+[[package]]
+name = "alsa-lib"
+version = "1.2.16"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "gnome-settings-daemon"
+version = "50.1"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "gtk", "pango", "harfbuzz", "fribidi", "cairo", "pixman", "freetype", "fontconfig", "libpng", "libtiff", "libjpeg-turbo", "gdk-pixbuf", "graphene", "libepoxy", "libxkbcommon", "wayland", "wayland-protocols", "mesa", "libdrm", "expat", "libxml2", "libsoup", "libpsl", "nghttp2", "sqlite", "json-glib", "gnome-desktop", "gsettings-desktop-schemas", "libgweather", "geocode-glib", "geoclue", "libcanberra", "libltdl", "libvorbis", "libogg", "libnotify", "pulseaudio", "libsndfile", "polkit", "upower", "elogind", "libgudev", "eudev", "dbus", "libcap", "util-linux", "linux-pam", "libxcrypt", "iso-codes", "xkeyboard-config", "duktape", "libseccomp", "alsa-lib"]
+
+[[package]]
+name = "libcanberra"
+version = "0.30"
+status = "built"
+dependencies = ["glibc", "libltdl", "libvorbis", "libogg"]
+
+[[package]]
+name = "libltdl"
+version = "2.6.2"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libnotify"
+version = "0.8.9"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "libpng", "libtiff", "libjpeg-turbo"]
+
+[[package]]
+name = "libogg"
+version = "1.3.6"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "librsvg"
+version = "2.62.4"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "cairo", "pixman", "freetype", "fontconfig", "libpng", "expat", "harfbuzz", "fribidi", "pango", "gdk-pixbuf", "libxml2", "libtiff", "libjpeg-turbo", "gcc-runtime"]
+
+[[package]]
+name = "libvorbis"
+version = "1.3.7"
+status = "built"
+dependencies = ["glibc", "libogg"]
