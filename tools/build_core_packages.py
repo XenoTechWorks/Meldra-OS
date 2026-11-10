@@ -63,15 +63,23 @@ def build_kiln(work: Path, output: Path) -> None:
 def build_busybox(binary: Path, work: Path, output: Path) -> None:
     source = work / "busybox"
     applets = (
-        "busybox", "sh", "ash", "mount", "umount", "agetty", "login", "getty",
+        "sh", "ash", "mount", "umount", "agetty", "login", "getty",
         "poweroff", "reboot", "echo", "cat", "sleep", "uname", "ls", "dmesg",
         "ip", "udhcpc", "ping", "mkdir", "chmod", "chown", "cp", "mv", "rm",
         "ps", "kill", "tar", "gzip", "sha256sum", "switch_root",
+        # Everyday user tools, so a terminal session is usable. No daemons and nothing that needs setuid.
+        "awk", "basename", "clear", "cut", "date", "df", "diff", "dirname", "du", "env", "expr", "false",
+        "find", "free", "grep", "gunzip", "head", "hostname", "id", "less", "ln", "more", "nslookup", "printf",
+        "pwd", "readlink", "realpath", "rmdir", "sed", "seq", "sort", "stat", "tail", "tee", "test", "[",
+        "top", "touch", "tr", "true", "uniq", "uptime", "vi", "wc", "wget", "which", "whoami", "xargs",
+        "zcat", "killall", "pgrep", "pkill", "nc", "traceroute", "tree", "watch", "yes", "unzip", "xz",
     )
+    binary_target = source / "root/bin/busybox"
+    binary_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(binary, binary_target)
     for applet in applets:
-        target = source / "root/bin" / applet
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(binary, target)
+        # One binary, many names: symlinks rather than ~1 MB copies per applet.
+        (source / "root/bin" / applet).symlink_to("busybox")
     write_manifest(
         source / "KILN.toml", "busybox", "1.36.1", "Meldra bootstrap command-line runtime"
     )

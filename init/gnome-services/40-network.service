@@ -1,0 +1,2 @@
+command=/usr/libexec/meldra/network-up
+respawn=yes

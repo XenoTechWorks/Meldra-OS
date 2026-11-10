@@ -67,8 +67,9 @@ three minimal Meldra apps: Files, Text Editor and Settings.</em></p>
 Working: keyboard and mouse input, the Foot terminal, polkit authentication-agent registration, UPower,
 AccountsService, GeoClue, RealtimeKit, and elogind poweroff/reboot. Files, Text Editor and Settings are small Meldra
 placeholder apps (a file browser, a single-document editor, and a dark-mode switch), not Nautilus, GNOME Text Editor
-or GNOME Settings. The session starts directly, not through GDM's login screen. Networking, audio, and hardware
-acceleration remain.
+or GNOME Settings. Wired networking works (DHCP, DNS and HTTP over busybox's udhcpc; no NetworkManager or
+Wi-Fi yet, so GNOME shows no network indicator). The session starts directly, not through GDM's login screen. Audio
+and hardware acceleration remain.
 
 ## What works today
 

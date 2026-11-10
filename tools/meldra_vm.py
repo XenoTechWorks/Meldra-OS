@@ -104,7 +104,7 @@ def start(args: argparse.Namespace) -> int:
         "-m", str(args.memory), "-smp", str(args.cpus),
         *(["-cdrom", args.iso, "-boot", "d"] if args.iso else
           ["-kernel", args.kernel, "-initrd", args.initrd, "-append", args.append]),
-        "-device", "virtio-vga", "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci",
+        "-nic", "user,model=virtio-net-pci", "-device", "virtio-vga", "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci",
         "-display", args.display,
         "-monitor", f"unix:{MONITOR},server=on,wait=off",
         "-qmp", f"unix:{QMP},server=on,wait=off",

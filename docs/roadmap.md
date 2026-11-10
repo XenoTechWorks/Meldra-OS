@@ -15,7 +15,7 @@ The first genuinely usable console developer preview is reached after gate 4.
 ## Desktop OS — about 5% complete
 
 6. **Graphics platform:** DRM/KMS, Mesa, libinput, Wayland, Xwayland, fonts.
-7. **Desktop services:** D-Bus, elogind sessions, polkit, GeoClue and RealtimeKit work; portals, PipeWire and networking remain.
+7. **Desktop services:** D-Bus, elogind sessions, polkit, GeoClue and RealtimeKit work; wired DHCP networking works; portals, PipeWire, NetworkManager and Wi-Fi remain.
 8. **Labwc session:** lightweight graphical smoke target and recovery desktop.
 9. **GNOME session:** Mutter, Shell, Settings and core applications run with software rendering; the GDM login flow remains.
 10. **Hardware and polish:** GPU acceleration, suspend, audio, Bluetooth, accessibility, installer UX.

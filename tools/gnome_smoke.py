@@ -87,6 +87,10 @@ def main() -> int:
             first = Path(vm("screenshot", "smoke-started"))
             colours = distinct_colours(first)
             vm("serial", "true")
+            # Network: the DHCP service must have configured an address and a default route (offline-safe: QEMU's
+            # user network answers DHCP itself, no internet needed).
+            routes = vm("serial", "ip -4 route show default; ip -4 -o addr show scope global")
+            networked = "default via" in routes and "inet " in routes
             # Mouse: the tablet is absolute (0..32767 on each axis). Click the app-grid button at the bottom of the
             # Overview (640,738 on the 1280x800 screen); the Shell should switch to the app grid.
             subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0,'tools'); import meldra_vm; "
@@ -98,10 +102,11 @@ def main() -> int:
             time.sleep(4)
             second = Path(vm("screenshot", "smoke-after-super"))
             changed = clicked.read_bytes() != second.read_bytes()
+            evidence.append(f"network (DHCP address and default route): {networked}")
             evidence += [f"first frame: {first} ({colours} distinct colours sampled)",
                          f"after mouse click: {clicked} (frame changed: {mouse_worked})",
                          f"after Super: {second} (frame changed: {changed})"]
-            passed = colours > 8 and changed and mouse_worked
+            passed = colours > 8 and changed and mouse_worked and networked
     except (RuntimeError, OSError, subprocess.CalledProcessError) as error:
         evidence.append(f"error: {error}")
     finally:

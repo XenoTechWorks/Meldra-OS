@@ -569,6 +569,10 @@ def session_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Pat
     start = stage / "usr/libexec/meldra/start-gnome"
     shutil.copy2("init/start-gnome.sh", start)
     start.chmod(0o755)
+    for script in ("network-up", "udhcpc-script"):
+        target = stage / "usr/libexec/meldra" / script
+        shutil.copy2(f"init/network/{script}.sh", target)
+        target.chmod(0o755)
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
