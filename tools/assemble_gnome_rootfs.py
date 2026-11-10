@@ -33,7 +33,7 @@ ROOTS = (
     "gnome-shell", "gnome-backgrounds", "gnome-classic-favorites", "dejavu-fonts", "xkeyboard-config",
     "gsettings-desktop-schemas", "gcc-runtime", "glycin", "gi-typelibs", "accountsservice", "gdm", "dconf",
     "librsvg", "upower", "geoclue", "geocode-glib", "libgweather", "ibus", "gnome-settings-daemon",
-    "bubblewrap", "adwaita-icon-theme", "hicolor-icon-theme",
+    "bubblewrap", "adwaita-icon-theme", "hicolor-icon-theme", "foot",
 )
 
 PASSWD = (
@@ -167,6 +167,14 @@ def main() -> int:
     for directory in ("home/meldra", "var/lib/dbus", "run"):
         (root / directory).mkdir(parents=True, exist_ok=True)
 
+    # foot (the terminal) has no terminfo entry in this image, so ask for the widely understood xterm one.
+    (etc / "xdg/foot").mkdir(parents=True, exist_ok=True)
+    (etc / "xdg/foot/foot.ini").write_text("[main]\nterm=xterm-256color\nfont=DejaVu Sans Mono:size=11\n", encoding="utf-8")
+
+    # Only the main Foot launcher belongs in the app grid; its server and client entries are for scripting.
+    for hidden in ("foot-server.desktop", "footclient.desktop"):
+        (root / "usr/share/applications" / hidden).unlink(missing_ok=True)
+
     services = etc / "meldra/services"
     for name in REMOVED_SERVICES:
         (services / name).unlink(missing_ok=True)
@@ -185,6 +193,11 @@ def main() -> int:
             shutil.move(str(entry), str(target))
         lib64.rmdir()
         lib64.symlink_to("usr/lib64")
+    # The glibc package ships locale sources but no compiled locale; programs such as foot refuse to run without
+    # a UTF-8 one. Compile C.UTF-8 with the target's own localedef (before usr/share/i18n is pruned).
+    if (root / "usr/bin/localedef").is_file():
+        (root / "usr/lib/locale").mkdir(parents=True, exist_ok=True)
+        run_target(root, "/usr/bin/localedef", "--no-archive", f"--prefix={root}", "-i", "C", "-f", "UTF-8", "C.utf8")
     pruned = prune_development_files(root)
     print(f"pruned {pruned / 1e6:.0f} MB of development files")
     count, saved = strip_debug_info(root)

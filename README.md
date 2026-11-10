@@ -58,8 +58,14 @@ that it draws and reacts to the keyboard.</em></p>
 <p align="center"><em>After a mouse click on the app grid button (sent through QEMU's QMP <code>input-send-event</code>). The grid is
 empty because no applications are installed yet.</em></p>
 
-Working: keyboard input (the Super key) and mouse input (a click on the app grid button). Not yet working or not yet
-tested: the login screen (the session starts directly, not through GDM), polkit, UPower, accountsservice, geoclue and the other system
+<p align="center">
+  <img src="docs/screenshots/gnome-terminal.png" width="720" alt="Meldra OS running GNOME Shell with the foot terminal open, showing uname and ls output">
+</p>
+
+<p align="center"><em>The foot terminal, launched from the app grid by mouse and driven from the keyboard.</em></p>
+
+Working: keyboard input (the Super key), mouse input (a click on the app grid button), and a terminal (foot, with a
+generated C.UTF-8 locale and devpts mounted). Not yet working or not yet tested: the login screen (the session starts directly, not through GDM), polkit, UPower, accountsservice, geoclue and the other system
 daemons the Shell talks to, networking, audio, and hardware acceleration.
 
 ## What works today

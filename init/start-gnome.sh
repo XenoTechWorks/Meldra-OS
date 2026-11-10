@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Runs inside the logind session, as the unprivileged user, started by meldra-session.
 # Meldra has no GPU driver in the preview image, so Mesa renders in software (kms_swrast on the DRM node).
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
 export XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP=GNOME
 export LIBGL_ALWAYS_SOFTWARE=1

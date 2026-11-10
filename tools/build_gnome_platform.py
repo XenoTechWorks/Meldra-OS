@@ -1025,6 +1025,20 @@ PACKAGES = [
                  "--disable-lynx"),
         pattern="libcanberra.so.0.*",
     ),
+    Package("tllist", ("glibc",), kind="data", pattern="usr/include/tllist.h"),
+    Package(
+        "fcft", ("glibc", "tllist", "freetype", "fontconfig", "harfbuzz", "pixman"),
+        options=("-Dgrapheme-shaping=disabled", "-Drun-shaping=disabled", "-Dsvg-backend=none", "-Ddocs=disabled",
+                 "-Dtest-text-shaping=false"),
+        pattern="libfcft.so.4.*",
+    ),
+    Package(
+        "foot", ("glibc", "tllist", "fcft", "freetype", "fontconfig", "harfbuzz", "pixman", "wayland",
+                 "wayland-protocols", "libxkbcommon", "dejavu-fonts"),
+        kind="data", options=("-Ddocs=disabled", "-Dtests=false", "-Dterminfo=disabled", "-Dgrapheme-clustering=disabled",
+                 "-Dime=false", "-Dutmp-backend=none", "-Dthemes=false"),
+        pattern="usr/bin/foot",
+    ),
     Package(
         "libnotify", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "libpng", "libtiff", "libjpeg-turbo"), introspect=True,
         options=("-Dtests=false", "-Dman=false", "-Dgtk_doc=false", "-Ddocbook_docs=disabled",

@@ -42,7 +42,7 @@ def on_host(command: str, check: bool = False) -> subprocess.CompletedProcess:
 
 
 def qemu_running() -> bool:
-    return on_host("pgrep -x qemu-system-x86_64 >/dev/null 2>&1").returncode == 0
+    return on_host("pgrep -f '^qemu-system-x86_64' >/dev/null 2>&1").returncode == 0
 
 
 def monitor(command: str, wait: float = 0.5) -> str:
@@ -105,14 +105,19 @@ def start(args: argparse.Namespace) -> int:
         "-kernel", args.kernel, "-initrd", args.initrd,
         "-append", args.append,
         "-device", "virtio-vga", "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci",
-        "-display", "none",
+        "-display", args.display,
         "-monitor", f"unix:{MONITOR},server=on,wait=off",
         "-qmp", f"unix:{QMP},server=on,wait=off",
         "-chardev", f"socket,id=serial0,path={SERIAL},server=on,wait=off,logfile={LOG}",
         "-serial", "chardev:serial0",
-        "-no-reboot", "-pidfile", str(PIDFILE), "-daemonize",
+        "-no-reboot", "-pidfile", str(PIDFILE),
     ]
-    result = on_host(f"cd {shlex.quote(str(cwd))} && nice -n 10 " + " ".join(shlex.quote(a) for a in qemu))
+    command = f"cd {shlex.quote(str(cwd))} && nice -n 10 " + " ".join(shlex.quote(a) for a in qemu)
+    if args.display == "none":
+        result = on_host(command + " -daemonize")
+    else:
+        # A windowed QEMU cannot daemonize (the GUI toolkit starts after the fork); background it instead.
+        result = on_host(f"setsid nohup sh -c {shlex.quote(command)} >/dev/null 2>&1 &")
     if result.returncode:
         print(result.stderr.strip() or "qemu failed to start", file=sys.stderr)
         return 1
@@ -235,6 +240,7 @@ def main() -> int:
     s.add_argument("--initrd", default="build/meldra-gnome-initramfs.cpio.gz")
     s.add_argument("--memory", type=int, default=4096)
     s.add_argument("--cpus", type=int, default=2)
+    s.add_argument("--display", default="none", help="QEMU display backend; 'gtk' opens a window you can use")
     s.add_argument("--append", default="console=ttyS0 rdinit=/init panic=1 loglevel=6")
     s.set_defaults(run=start)
     s = sub.add_parser("screenshot")

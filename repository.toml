@@ -675,3 +675,21 @@ name = "hicolor-icon-theme"
 version = "0.18"
 status = "built"
 dependencies = ["glibc"]
+
+[[package]]
+name = "tllist"
+version = "1.1.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "fcft"
+version = "3.3.3"
+status = "built"
+dependencies = ["glibc", "tllist", "freetype", "fontconfig", "harfbuzz", "pixman"]
+
+[[package]]
+name = "foot"
+version = "1.28.0"
+status = "built"
+dependencies = ["glibc", "tllist", "fcft", "freetype", "fontconfig", "harfbuzz", "pixman", "wayland", "wayland-protocols", "libxkbcommon", "dejavu-fonts"]
