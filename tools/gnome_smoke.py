@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
-"""Boot the GNOME image once and check that GNOME Shell starts, draws, and reacts to the keyboard.
+"""Boot the GNOME image once and check that GNOME Shell starts, draws, and reacts to the mouse and the keyboard.
 
     gnome_smoke.py [--initrd build/meldra-gnome-initramfs.cpio.gz] [--timeout 240]
 
@@ -29,6 +29,11 @@ def vm(*arguments: str, check: bool = True) -> str:
     if check and result.returncode:
         raise RuntimeError(result.stderr.strip() or f"meldra_vm {' '.join(arguments)} failed")
     return result.stdout.strip()
+
+
+def monitor_call(command: str) -> None:
+    subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0,'tools'); import meldra_vm; "
+                    f"meldra_vm.monitor({command!r}, wait=0.5)"], check=True)
 
 
 def distinct_colours(png: Path) -> int:
@@ -82,14 +87,21 @@ def main() -> int:
             first = Path(vm("screenshot", "smoke-started"))
             colours = distinct_colours(first)
             vm("serial", "true")
-            subprocess.run([*VM[:1], "-c", "import sys; sys.path.insert(0,'tools'); import meldra_vm; "
-                            "meldra_vm.monitor('sendkey meta_l', wait=0.5)"], check=True)
+            # Mouse: the tablet is absolute (0..32767 on each axis). Click the app-grid button at the bottom of the
+            # Overview (640,738 on the 1280x800 screen); the Shell should switch to the app grid.
+            subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0,'tools'); import meldra_vm; "
+                            "meldra_vm.click(640, 738)"], check=True)
+            time.sleep(5)
+            clicked = Path(vm("screenshot", "smoke-after-click"))
+            mouse_worked = first.read_bytes() != clicked.read_bytes()
+            monitor_call("sendkey meta_l")
             time.sleep(4)
             second = Path(vm("screenshot", "smoke-after-super"))
-            changed = first.read_bytes() != second.read_bytes()
+            changed = clicked.read_bytes() != second.read_bytes()
             evidence += [f"first frame: {first} ({colours} distinct colours sampled)",
+                         f"after mouse click: {clicked} (frame changed: {mouse_worked})",
                          f"after Super: {second} (frame changed: {changed})"]
-            passed = colours > 8 and changed
+            passed = colours > 8 and changed and mouse_worked
     except (RuntimeError, OSError, subprocess.CalledProcessError) as error:
         evidence.append(f"error: {error}")
     finally:

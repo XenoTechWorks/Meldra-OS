@@ -51,8 +51,15 @@ inside its bubblewrap sandbox) and the Adwaita icons.</em></p>
 desktop. Both frames come from <code>tools/gnome_smoke.py</code>, which boots the image, waits for the Shell, and checks
 that it draws and reacts to the keyboard.</em></p>
 
-Working: keyboard input (checked with the Super key). Not yet working or not yet tested: mouse input, the login
-screen (the session starts directly, not through GDM), polkit, UPower, accountsservice, geoclue and the other system
+<p align="center">
+  <img src="docs/screenshots/gnome-app-grid.png" width="720" alt="Meldra OS running GNOME Shell: the app grid after a mouse click on the app grid button">
+</p>
+
+<p align="center"><em>After a mouse click on the app grid button (sent through QEMU's QMP <code>input-send-event</code>). The grid is
+empty because no applications are installed yet.</em></p>
+
+Working: keyboard input (the Super key) and mouse input (a click on the app grid button). Not yet working or not yet
+tested: the login screen (the session starts directly, not through GDM), polkit, UPower, accountsservice, geoclue and the other system
 daemons the Shell talks to, networking, audio, and hardware acceleration.
 
 ## What works today

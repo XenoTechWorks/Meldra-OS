@@ -30,6 +30,7 @@ import zlib
 
 STATE = Path("build/vm")
 MONITOR = STATE / "monitor.sock"
+QMP = STATE / "qmp.sock"
 SERIAL = STATE / "serial.sock"
 LOG = STATE / "serial.log"
 PIDFILE = STATE / "qemu.pid"
@@ -59,6 +60,32 @@ def monitor(command: str, wait: float = 0.5) -> str:
             return ""
 
 
+def qmp(command: str, **arguments) -> dict:
+    """Send one QMP command (e.g. input-send-event, which reaches virtio input devices that HMP's mouse_* cannot)."""
+    import json
+    with socket.socket(socket.AF_UNIX) as sock:
+        sock.settimeout(5)
+        sock.connect(str(QMP))
+        reader = sock.makefile("rw")
+        reader.readline()  # greeting
+        for message in ({"execute": "qmp_capabilities"}, {"execute": command, "arguments": arguments}):
+            reader.write(json.dumps(message) + "\n")
+            reader.flush()
+            reply = json.loads(reader.readline())
+        return reply
+
+
+def click(x: int, y: int, width: int = 1280, height: int = 800) -> None:
+    """Move the absolute pointer to pixel (x, y) and left-click."""
+    def axis(name: str, value: int) -> dict:
+        return {"type": "abs", "data": {"axis": name, "value": value * 32767 // (width if name == "x" else height)}}
+    qmp("input-send-event", events=[axis("x", x), axis("y", y)])
+    time.sleep(0.5)
+    for down in (True, False):
+        qmp("input-send-event", events=[{"type": "btn", "data": {"button": "left", "down": down}}])
+        time.sleep(0.2)
+
+
 def start(args: argparse.Namespace) -> int:
     if qemu_running():
         print("a qemu-system process is already running; stop it first (one VM at a time)", file=sys.stderr)
@@ -68,7 +95,7 @@ def start(args: argparse.Namespace) -> int:
             print(f"missing {needed}", file=sys.stderr)
             return 1
     STATE.mkdir(parents=True, exist_ok=True)
-    for stale in (MONITOR, SERIAL, PIDFILE):
+    for stale in (MONITOR, QMP, SERIAL, PIDFILE):
         stale.unlink(missing_ok=True)
     LOG.write_text("")
     cwd = Path.cwd()
@@ -80,6 +107,7 @@ def start(args: argparse.Namespace) -> int:
         "-device", "virtio-vga", "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci",
         "-display", "none",
         "-monitor", f"unix:{MONITOR},server=on,wait=off",
+        "-qmp", f"unix:{QMP},server=on,wait=off",
         "-chardev", f"socket,id=serial0,path={SERIAL},server=on,wait=off,logfile={LOG}",
         "-serial", "chardev:serial0",
         "-no-reboot", "-pidfile", str(PIDFILE), "-daemonize",
