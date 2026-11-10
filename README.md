@@ -37,15 +37,22 @@ Meldra also boots **GNOME Shell 50.6** as a Wayland display server in QEMU: Hear
 PAM session is opened for an unprivileged user, and Mutter drives the virtual GPU (software rendering).
 
 <p align="center">
-  <img src="docs/screenshots/gnome-first-frame.png" width="720" alt="Meldra OS running GNOME Shell: the Activities Overview with the top bar, search field and workspace thumbnails">
+  <img src="docs/screenshots/gnome-overview.png" width="720" alt="Meldra OS running GNOME Shell: the Activities Overview with the blue GNOME wallpaper in the workspace thumbnail, the search field and the app grid button">
 </p>
 
-<p align="center"><em>The first GNOME Shell frame on Meldra OS (Activities Overview, taken through QEMU's screendump). It is
-unfinished: the wallpaper is a flat colour because the image loader's sandbox (bubblewrap) is not built yet, and
-there are no icons because no icon theme is installed.</em></p>
+<p align="center"><em>GNOME Shell's Activities Overview on Meldra OS, with the GNOME wallpaper (decoded by glycin
+inside its bubblewrap sandbox) and the Adwaita icons.</em></p>
 
-Not yet working or not yet tested: input (the frame was captured, not driven), the login screen (the session starts
-directly, not through GDM), icons, the wallpaper, polkit, UPower, accountsservice, geoclue and the other system
+<p align="center">
+  <img src="docs/screenshots/gnome-desktop.png" width="720" alt="Meldra OS running GNOME Shell: the desktop with the wallpaper and the top bar, after pressing the Super key">
+</p>
+
+<p align="center"><em>The same session after a Super key press sent through QEMU: the Shell left the Overview for the
+desktop. Both frames come from <code>tools/gnome_smoke.py</code>, which boots the image, waits for the Shell, and checks
+that it draws and reacts to the keyboard.</em></p>
+
+Working: keyboard input (checked with the Super key). Not yet working or not yet tested: mouse input, the login
+screen (the session starts directly, not through GDM), polkit, UPower, accountsservice, geoclue and the other system
 daemons the Shell talks to, networking, audio, and hardware acceleration.
 
 ## What works today

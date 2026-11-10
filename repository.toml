@@ -657,3 +657,21 @@ name = "libvorbis"
 version = "1.3.7"
 status = "built"
 dependencies = ["glibc", "libogg"]
+
+[[package]]
+name = "bubblewrap"
+version = "0.13.1"
+status = "built"
+dependencies = ["glibc", "libcap"]
+
+[[package]]
+name = "adwaita-icon-theme"
+version = "50.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "hicolor-icon-theme"
+version = "0.18"
+status = "built"
+dependencies = ["glibc"]

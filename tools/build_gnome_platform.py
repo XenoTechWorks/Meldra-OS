@@ -375,7 +375,8 @@ def strip_any_sysroot_prefix(stage: Path) -> list[str]:
         buffer = bytearray(data)
         for match in list(pattern.finditer(data)):
             old, new = match.group(0), match.group(1)
-            if not new.startswith((b"/usr/", b"/etc/", b"/var/", b"/lib", b"/opt/")):
+            # A bare prefix counts too: IBus bakes in iso-codes' pkg-config `prefix`, which is exactly ".../usr".
+            if not (new.startswith((b"/usr/", b"/etc/", b"/var/", b"/lib", b"/opt/")) or new in (b"/usr", b"/etc", b"/var", b"/opt")):
                 continue
             buffer[match.start():match.end()] = new + b"\x00" * (len(old) - len(new))
             changed.append(f"{path.relative_to(stage)}: {new.decode()}")
@@ -933,6 +934,13 @@ PACKAGES = [
                 "polkit", "elogind", "linux-pam", "libxcrypt", "dbus", "expat", "libcap", "util-linux", "duktape",
                 "json-c", "dconf"),
         introspect=True, target_tools={"dconf": "/usr/bin/dconf"},
+        patches=(("meson.build", "c9d3891e334e8205c689b11d86b0d94e56e5257304924def0ce9e83b2913a20e",
+                  "50a58226259e23e83172efc86712dd17c9e21d4fd1f26927e716eec5a0b1d923",
+                  "  dconf_prefix = dconf_dep.get_variable(pkgconfig: 'prefix')\n",
+                  "  dconf_prefix = get_option('prefix')\n",
+                  "In a cross build dconf's pkg-config prefix carries the sysroot, so GDM's `== '/usr'` test fails and "
+                  "its dconf profile lands in <sysroot>/usr/etc with that path compiled into gdm-config. dconf and GDM "
+                  "share the /usr prefix here, so use it directly."),),
         options=("-Dx11-support=false", "-Dlogind-provider=elogind", "-Dplymouth=disabled", "-Dselinux=disabled",
                  "-Dlibaudit=disabled", "-Dsystemd-journal=false", "-Dgdm-xsession=false",
                  "-Dsystemdsystemunitdir=/usr/lib/systemd/system", "-Dsystemduserunitdir=/usr/lib/systemd/user",
@@ -1048,6 +1056,14 @@ PACKAGES = [
                  "--without-debug", "--disable-aload", "--disable-old-symbols"),
         pattern="libasound.so.2.*",
     ),
+    Package(
+        "bubblewrap", ("glibc", "libcap"), kind="data",
+        options=("-Dman=disabled", "-Dselinux=disabled", "-Dtests=false", "-Dbash_completion=disabled",
+                 "-Dzsh_completion=disabled"),
+        pattern="usr/bin/bwrap",
+    ),
+    Package("adwaita-icon-theme", ("glibc",), kind="data", pattern="usr/share/icons/Adwaita/index.theme"),
+    Package("hicolor-icon-theme", ("glibc",), kind="data", pattern="usr/share/icons/hicolor/index.theme"),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
@@ -1435,6 +1451,12 @@ def main() -> int:
     try:
         import contextlib
         keep_dir = Path("build/work").resolve()
+        # Programs run on the host (valac, vapigen, the host Python) cannot see the sandbox's /tmp, so a build
+        # that uses them must work inside the project tree.
+        selected = [p for p in PACKAGES if p.name in args.names] if args.names else []
+        if any(p.host_programs or p.host_python for p in selected) and not args.keep:
+            print("using build/work: a selected package runs programs on the host")
+            args.keep = True
         if args.keep:
             shutil.rmtree(keep_dir, ignore_errors=True)
             keep_dir.mkdir(parents=True)

@@ -33,6 +33,7 @@ ROOTS = (
     "gnome-shell", "gnome-backgrounds", "gnome-classic-favorites", "dejavu-fonts", "xkeyboard-config",
     "gsettings-desktop-schemas", "gcc-runtime", "glycin", "gi-typelibs", "accountsservice", "gdm", "dconf",
     "librsvg", "upower", "geoclue", "geocode-glib", "libgweather", "ibus", "gnome-settings-daemon",
+    "bubblewrap", "adwaita-icon-theme", "hicolor-icon-theme",
 )
 
 PASSWD = (
@@ -74,6 +75,22 @@ def closure(packages: dict[str, tuple[Path, dict]], roots: tuple[str, ...]) -> l
         wanted.add(name)
         pending.extend(packages[name][1].get("dependencies", []))
     return [packages[name][0] for name in sorted(wanted)]
+
+
+# The initramfs root cannot be pivot_root'ed, and bubblewrap (glycin's image-loader sandbox) needs pivot_root, so
+# /init moves the whole root into a tmpfs and switches to it before Hearth starts. switch_root frees the initramfs
+# copy as it goes, and keeps PID 1.
+PREVIEW_INIT = """#!/bin/sh
+/bin/mount -t proc proc /proc
+/bin/mkdir -p /newroot
+/bin/mount -t tmpfs -o mode=0755 tmpfs /newroot
+for entry in /*; do
+    case "$entry" in /newroot|/proc|/sys|/dev|/init) ;; *) /bin/cp -a "$entry" /newroot/ ;; esac
+done
+/bin/mkdir -p /newroot/proc /newroot/sys /newroot/dev
+/bin/umount /proc
+exec /bin/switch_root /newroot /sbin/hearth
+"""
 
 
 # Build-time files the running system never reads. Typelibs (.typelib), schemas, locales and icons stay.
@@ -138,6 +155,10 @@ def main() -> int:
     except RuntimeError as error:
         parser.error(str(error))
 
+    init = root / "init"
+    init.unlink()
+    init.write_text(PREVIEW_INIT, encoding="utf-8")
+    init.chmod(0o755)
     etc = root / "etc"
     (etc / "passwd").write_text(PASSWD, encoding="utf-8")
     (etc / "group").write_text(GROUP, encoding="utf-8")
@@ -152,6 +173,18 @@ def main() -> int:
     for service in sorted(Path("init/gnome-services").glob("*.service")):
         shutil.copy2(service, services / service.name)
 
+    # Merged /usr for lib64: sandboxes such as glycin's bubblewrap bind only /usr and recreate /lib64 only when it
+    # is a symlink into it, so a real /lib64 leaves sandboxed programs without their dynamic loader.
+    lib64, usr_lib64 = root / "lib64", root / "usr/lib64"
+    if lib64.is_dir() and not lib64.is_symlink():
+        usr_lib64.mkdir(parents=True, exist_ok=True)
+        for entry in sorted(lib64.iterdir()):
+            target = usr_lib64 / entry.name
+            if target.exists() or target.is_symlink():
+                raise RuntimeError(f"both /lib64 and /usr/lib64 contain {entry.name}")
+            shutil.move(str(entry), str(target))
+        lib64.rmdir()
+        lib64.symlink_to("usr/lib64")
     pruned = prune_development_files(root)
     print(f"pruned {pruned / 1e6:.0f} MB of development files")
     count, saved = strip_debug_info(root)
@@ -170,6 +203,10 @@ def main() -> int:
                                      "GCONV_PATH": f"{root}/usr/lib64/gconv"})
         # The cache must name the modules by their installed path, not the build tree.
         cache.write_text(result.stdout.replace(str(root), ""))
+    icon_cache = root / "usr/bin/gtk4-update-icon-cache"
+    if icon_cache.is_file():
+        for theme in sorted((root / "usr/share/icons").glob("*/index.theme")):
+            run_target(root, "/usr/bin/gtk4-update-icon-cache", "--quiet", "--force", str(theme.parent))
     ldconfig = root / "sbin/ldconfig"
     if ldconfig.is_file():
         (etc / "ld.so.cache").unlink(missing_ok=True)
