@@ -1,0 +1,61 @@
+name: Build kernel
+
+# The kernel with GPU, Wi-Fi and audio modules is too long a build for the maintainer's fanless machine, so
+# CI builds it from the pinned, checksum-verified source. Manual only: nothing runs on push or pull request.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      # Actions are pinned to full commit hashes (the tag in the comment is what was resolved).
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends make gcc bc flex bison libelf-dev libssl-dev kmod cpio xz-utils
+          echo "gcc:  $(gcc --version | head -1)"
+          echo "make: $(make --version | head -1)"
+
+      - name: Fetch and verify the kernel source
+        run: python3 tools/fetch_sources.py
+
+      - name: Build the kernel and its packages
+        run: |
+          mkdir -p out logs
+          set -o pipefail
+          python3 tools/build_kernel.py --jobs "$(nproc)" --packages out 2>&1 | tee logs/build-kernel.log
+          cp build/bzImage out/bzImage
+          cp build/linux/.config out/kernel.config
+          sha256sum out/* | tee out/SHA256SUMS
+
+      - name: Upload the kernel
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: meldra-kernel
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summarise the modules
+        run: |
+          tar -tf out/linux-modules-*.kiln | grep -c '\.ko$'
+          tar -tf out/linux-modules-*.kiln | grep -E '/(iwlwifi|amdgpu|mt7921e|rtw89_8852ce|snd-sof-pci)\.ko$'
+
+      - name: Upload the build log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: kernel-build-log
+          path: logs/
+          if-no-files-found: ignore
+          retention-days: 14
