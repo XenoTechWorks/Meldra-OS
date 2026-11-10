@@ -531,3 +531,21 @@ name = "pulseaudio"
 version = "17.0"
 status = "built"
 dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libcap", "libsndfile"]
+
+[[package]]
+name = "libxcrypt"
+version = "4.5.2"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "linux-pam"
+version = "1.7.3"
+status = "built"
+dependencies = ["glibc", "libxcrypt"]
+
+[[package]]
+name = "meldra-session"
+version = "0.1.0"
+status = "built"
+dependencies = ["glibc", "linux-pam", "libxcrypt", "elogind"]

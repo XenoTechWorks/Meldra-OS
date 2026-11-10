@@ -29,8 +29,13 @@ from tools.build_graphics_packages import manifest, python_wheel, require_glibc_
 import tools.build_desktop_libraries as desktop
 
 
+OWNED = {"meldra-session": "0.1.0"}   # built from this repository, so there is no upstream pin
+
+
 def pin(lock_data: dict, name: str) -> dict:
     """A package's pin: the gnome section first, then the older desktop section."""
+    if name in OWNED:
+        return {"version": OWNED[name]}
     key = name.replace("-", "_")
     return lock_data["gnome"][key] if key in lock_data["gnome"] else lock_data["desktop"][key]
 
@@ -455,6 +460,25 @@ def gnome_shell_build(pkg: Package, lock: dict, cache: Path, work: Path, output:
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
+def session_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """meldra-session (init/meldra-session.c): compiled against the target sysroot with Hearth's warning level."""
+    unit = work / pkg.name
+    unit.mkdir()
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    (stage / "usr/bin").mkdir(parents=True)
+    (stage / "etc/pam.d").mkdir(parents=True)
+    binary = stage / "usr/bin/meldra-session"
+    subprocess.run(
+        ["gcc", f"--sysroot={root}", "-std=gnu11", "-O2", "-Wall", "-Wextra", "-Werror", "-pedantic",
+         "-o", str(binary), "init/meldra-session.c", f"-Wl,-rpath-link,{root}/usr/lib", f"-Wl,-rpath-link,{root}/lib64",
+         "-lpam"], check=True)
+    require_glibc_elf(binary)
+    shutil.copy2("init/pam.d/meldra-session", stage / "etc/pam.d/meldra-session")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
 def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     unit = work / pkg.name
     unit.mkdir()
@@ -790,6 +814,20 @@ PACKAGES = [
                  "--sysconfdir=/etc", "--localstatedir=/var"),
         pattern="libpulse.so.0.*",
     ),
+    Package(
+        "libxcrypt", ("glibc",), kind="autotools",
+        options=("--disable-static", "--enable-shared", "--disable-obsolete-api", "--disable-failure-tokens", "--disable-werror"),
+        pattern="libcrypt.so.2.*",
+    ),
+    Package(
+        "linux-pam", ("glibc", "libxcrypt"),
+        options=("-Di18n=disabled", "-Ddocs=disabled", "-Daudit=disabled", "-Deconf=disabled",
+                 "-Dlogind=disabled", "-Delogind=disabled", "-Dselinux=disabled", "-Dnis=disabled",
+                 "-Dpwaccess=disabled", "-Dpam_userdb=disabled", "-Dexamples=false", "-Dxtests=false",
+                 "-Dsecuredir=/usr/lib/security", "-Dsconfigdir=/etc/security", "--sysconfdir=/etc"),
+        pattern="libpam.so.0.*",
+    ),
+    Package("meldra-session", ("glibc", "linux-pam", "libxcrypt", "elogind"), kind="custom"),
     Package("iso-codes", ("glibc",), kind="data", pattern="usr/share/pkgconfig/iso-codes.pc"),
     Package(
         "gnome-desktop", ("glibc", "glib", "libffi", "pcre2", "zlib", "gdk-pixbuf", "gtk", "gsettings-desktop-schemas",
@@ -869,8 +907,8 @@ PACKAGES = [
         pattern="libmount.so.1.*",
     ),
     Package(
-        "elogind", ("glibc", "libcap", "eudev", "dbus", "util-linux"),
-        options=("-Dpam=false", "-Dacl=disabled", "-Daudit=disabled", "-Dselinux=disabled",
+        "elogind", ("glibc", "libcap", "eudev", "dbus", "util-linux", "linux-pam", "libxcrypt"),
+        options=("-Dpam=true", "-Dacl=disabled", "-Daudit=disabled", "-Dselinux=disabled",
                  "-Dman=disabled", "-Dhtml=disabled", "-Dtests=false", "-Dpolkit=false",
                  "-Dsmack=false", "-Dcgroup-controller=elogind", "-Ddefault-hierarchy=unified",
                  "-Dutmp=false", "-Dpamlibdir=/usr/lib/security"),
@@ -1115,7 +1153,9 @@ def main() -> int:
                     continue
                 print(f"==> {pkg.name} {desktop.VERSIONS[pkg.name]}", flush=True)
                 lock = pin(lock_data, pkg.name)
-                if pkg.name == "gnome-shell":
+                if pkg.name == "meldra-session":
+                    session_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.name == "gnome-shell":
                     gnome_shell_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.name == "icu":
                     icu_build(pkg, lock, args.cache, work, args.output)

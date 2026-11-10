@@ -1,0 +1,7 @@
+# PAM service used by meldra-session. The caller is already root and has chosen the user, so there is
+# nothing to authenticate; the point of the stack is the session module, which makes elogind register a
+# login session on seat0 (Mutter's native backend refuses to start without one).
+auth     required pam_permit.so
+account  required pam_permit.so
+password required pam_deny.so
+session  required pam_elogind.so
