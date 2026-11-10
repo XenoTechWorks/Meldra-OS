@@ -55,8 +55,8 @@ that it draws and reacts to the keyboard.</em></p>
   <img src="docs/screenshots/gnome-app-grid.png" width="720" alt="Meldra OS running GNOME Shell: the app grid after a mouse click on the app grid button">
 </p>
 
-<p align="center"><em>After a mouse click on the app grid button (sent through QEMU's QMP <code>input-send-event</code>). The grid is
-empty because no applications are installed yet.</em></p>
+<p align="center"><em>The app grid is driven through QEMU's QMP input path. The current image includes Foot and
+three minimal Meldra apps: Files, Text Editor and Settings.</em></p>
 
 <p align="center">
   <img src="docs/screenshots/gnome-terminal.png" width="720" alt="Meldra OS running GNOME Shell with the foot terminal open, showing uname and ls output">
@@ -64,9 +64,11 @@ empty because no applications are installed yet.</em></p>
 
 <p align="center"><em>The foot terminal, launched from the app grid by mouse and driven from the keyboard.</em></p>
 
-Working: keyboard input (the Super key), mouse input (a click on the app grid button), and a terminal (foot, with a
-generated C.UTF-8 locale and devpts mounted). Not yet working or not yet tested: the login screen (the session starts directly, not through GDM), polkit, UPower, accountsservice, geoclue and the other system
-daemons the Shell talks to, networking, audio, and hardware acceleration.
+Working: keyboard and mouse input, the Foot terminal, polkit authentication-agent registration, UPower,
+AccountsService, GeoClue, RealtimeKit, and elogind poweroff/reboot. Files, Text Editor and Settings are small Meldra
+placeholder apps (a file browser, a single-document editor, and a dark-mode switch), not Nautilus, GNOME Text Editor
+or GNOME Settings. The session starts directly, not through GDM's login screen. Networking, audio, and hardware
+acceleration remain.
 
 ## What works today
 
@@ -81,7 +83,7 @@ daemons the Shell talks to, networking, audio, and hardware acceleration.
 | Text and UI | Built | FreeType, Fontconfig, HarfBuzz, FriBidi, Cairo, Pango |
 | Window manager | Running | Labwc 0.9.1 on virtio-vga in QEMU |
 | Desktop assets | Packaged | Current GNOME backgrounds plus Aqua, Curves, and Sunset |
-| GNOME desktop | Shell boots | Mutter and GNOME Shell 50.6 start in QEMU (software rendering); GDM login, settings, portals and the system daemons remain |
+| GNOME desktop | Usable preview | Shell 50.6, core apps, polkit and desktop daemons run in QEMU; GDM login and portals remain |
 
 Meldra is a developer preview, not yet an installable daily-driver OS. Audio,
 network management, graphical login, a terminal, a panel, and the full GNOME

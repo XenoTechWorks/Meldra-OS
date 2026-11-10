@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Settings
+Comment=Configure Meldra OS
+Exec=meldra-settings
+Icon=preferences-system
+Terminal=false
+Type=Application
+Categories=GTK;Settings;
+OnlyShowIn=GNOME;

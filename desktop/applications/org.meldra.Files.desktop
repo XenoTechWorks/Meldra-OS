@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Files
+Comment=Browse files and folders
+Exec=meldra-files
+Icon=system-file-manager
+Terminal=false
+Type=Application
+Categories=GTK;Utility;FileManager;

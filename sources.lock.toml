@@ -386,6 +386,12 @@ url = "https://github.com/polkit-org/polkit/archive/e6373dc19975d8583568c6cd7025
 sha256 = "70096dee2111b5b4077a2eaddabde77fd9db3336f6b3f7a50d2ee09bf60291c3"
 role = "authorization (Shell's auth agent). Pinned to commit e6373dc = tag 128; upstream tag and commit are unsigned, hash is from an HTTPS download"
 
+[gnome.rtkit]
+version = "0.14"
+url = "https://deb.debian.org/debian/pool/main/r/rtkit/rtkit_0.14.orig.tar.gz"
+sha256 = "b896741902847f3b4934bf0c75536ace5b07364402adcc9b20568578e5bb45b3"
+role = "RealtimeKit D-Bus service; checksum matches Debian's official orig tarball"
+
 [gnome.duktape]
 version = "2.7.0"
 url = "https://duktape.org/duktape-2.7.0.tar.xz"

@@ -41,6 +41,32 @@ class PackageManagerTests(unittest.TestCase):
         with self.assertRaises(PackageError):
             install(self.package(unsafe=True), self.root)
 
+    def setuid_package(self, name: str, path: str) -> Path:
+        package = self.work / f"{name}.kiln"
+        with tarfile.open(package, "w:gz") as archive:
+            manifest = f'[package]\nname="{name}"\nversion="1.0"\n'.encode()
+            info = tarfile.TarInfo("KILN.toml")
+            info.size = len(manifest)
+            archive.addfile(info, io.BytesIO(manifest))
+            info = tarfile.TarInfo(path)
+            info.size = 6
+            info.mode = 0o4755
+            archive.addfile(info, io.BytesIO(b"hello\n"))
+        return package
+
+    def test_restores_setuid_only_for_allowlisted_helpers(self):
+        install(self.setuid_package("polkit", "root/usr/lib/polkit-1/polkit-agent-helper-1"), self.root)
+        helper = self.root / "usr/lib/polkit-1/polkit-agent-helper-1"
+        self.assertEqual(helper.stat().st_mode & 0o7777, 0o4755)
+
+    def test_rejects_setuid_file_not_on_allowlist(self):
+        with self.assertRaises(PackageError):
+            install(self.setuid_package("hello", "root/usr/bin/hello"), self.root)
+        self.assertFalse((self.root / "usr/bin/hello").exists())
+        # The path alone is not enough: the allowlist is keyed by the owning package too.
+        with self.assertRaises(PackageError):
+            install(self.setuid_package("impostor", "root/usr/lib/polkit-1/polkit-agent-helper-1"), self.root)
+
     def test_builds_installable_package(self):
         source = self.work / "source"
         (source / "root/usr/share/hello").mkdir(parents=True)

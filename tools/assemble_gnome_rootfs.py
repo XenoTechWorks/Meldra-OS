@@ -33,18 +33,21 @@ ROOTS = (
     "gnome-shell", "gnome-backgrounds", "gnome-classic-favorites", "dejavu-fonts", "xkeyboard-config",
     "gsettings-desktop-schemas", "gcc-runtime", "glycin", "gi-typelibs", "accountsservice", "gdm", "dconf",
     "librsvg", "upower", "geoclue", "geocode-glib", "libgweather", "ibus", "gnome-settings-daemon",
-    "bubblewrap", "adwaita-icon-theme", "hicolor-icon-theme", "foot",
+    "bubblewrap", "adwaita-icon-theme", "hicolor-icon-theme", "foot", "rtkit", "meldra-desktop-apps",
 )
 
 PASSWD = (
     "root:x:0:0:root:/root:/bin/sh\n"
     "messagebus:x:81:81:D-Bus:/var/run/dbus:/bin/false\n"
+    "geoclue:x:120:120:GeoClue:/var/lib/geoclue:/bin/false\n"
+    "gdm:x:121:121:GDM:/var/lib/gdm:/bin/false\n"
+    "rtkit:x:122:122:RealtimeKit:/proc:/bin/false\n"
     "meldra:x:1000:1000:Meldra:/home/meldra:/bin/sh\n"
 )
 GROUP = (
     "root:x:0:\nkmem:x:2:\ntty:x:5:\ndisk:x:6:\nlp:x:7:\ndialout:x:18:\n"
     "video:x:27:meldra\ninput:x:28:meldra\naudio:x:29:meldra\nrender:x:104:meldra\nclock:x:105:\n"
-    "messagebus:x:81:\nmeldra:x:1000:\ncdrom:x:11:\nkvm:x:24:\n"
+    "messagebus:x:81:\ngeoclue:x:120:\ngdm:x:121:\nrtkit:x:122:\nmeldra:x:1000:\ncdrom:x:11:\nkvm:x:24:\n"
 )
 # Services of the base Hearth package that the GNOME image replaces: seatd (elogind is the seat manager
 # here) and the getty on tty1 (the session owns that VT).
@@ -155,6 +158,13 @@ def main() -> int:
     except RuntimeError as error:
         parser.error(str(error))
 
+    polkit_helper = root / "usr/lib/polkit-1/polkit-agent-helper-1"
+    if polkit_helper.stat().st_mode & 0o7777 != 0o4755:
+        raise RuntimeError("polkit authentication helper must be installed mode 4755")
+    dbus_helper = root / "usr/libexec/dbus-daemon-launch-helper"
+    if dbus_helper.stat().st_mode & 0o7777 != 0o4755:
+        raise RuntimeError("D-Bus service activation helper must be installed mode 4755")
+
     init = root / "init"
     init.unlink()
     init.write_text(PREVIEW_INIT, encoding="utf-8")
@@ -174,6 +184,20 @@ def main() -> int:
     # Only the main Foot launcher belongs in the app grid; its server and client entries are for scripting.
     for hidden in ("foot-server.desktop", "footclient.desktop"):
         (root / "usr/share/applications" / hidden).unlink(missing_ok=True)
+
+    for name in ("poweroff", "reboot"):
+        link = root / "sbin" / name
+        link.unlink(missing_ok=True)
+        link.symlink_to(f"../bin/{name}")
+
+    # Hearth owns elogind's lifecycle. Leaving its D-Bus activation file in
+    # place races Hearth against loginctl during startup and can create a
+    # duplicate-daemon respawn loop.
+    (root / "usr/share/dbus-1/system-services/org.freedesktop.login1.service").unlink(missing_ok=True)
+    # No D-Bus activation for GDM yet: the session starts directly (not through GDM's login screen), so an
+    # activated GDM only runs as root to refuse the Shell's registration ("No display available"). The Shell
+    # treats a missing GDM as normal. Add activation back together with the real GDM login flow.
+    (root / "usr/share/dbus-1/system-services/org.gnome.DisplayManager.service").unlink(missing_ok=True)
 
     services = etc / "meldra/services"
     for name in REMOVED_SERVICES:

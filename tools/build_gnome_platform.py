@@ -20,6 +20,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import tomllib
 
@@ -29,7 +30,8 @@ from tools.build_graphics_packages import manifest, python_wheel, require_glibc_
 import tools.build_desktop_libraries as desktop
 
 
-OWNED = {"meldra-session": "0.1.0", "gi-typelibs": "1.86.0"}   # built from this repository, so there is no upstream pin
+OWNED = {"meldra-session": "0.1.0", "meldra-desktop-apps": "0.1.0",
+         "gi-typelibs": "1.86.0"}   # built from this repository, so there is no upstream pin
 
 
 def pin(lock_data: dict, name: str) -> dict:
@@ -390,6 +392,18 @@ _kiln_build = build
 def checked_build(package: Path, archive: Path):
     """Every package passes through here: sysroot-prefixed strings baked into binaries are corrected first."""
     root = Path(package) / "root"
+    if archive.name.startswith("polkit-"):
+        helper = root / "usr/lib/polkit-1/polkit-agent-helper-1"
+        if not helper.is_file():
+            raise RuntimeError("polkit: authentication helper was not installed")
+        helper.chmod(0o4755)
+    if archive.name.startswith("dbus-"):
+        helper = root / "usr/libexec/dbus-daemon-launch-helper"
+        if not helper.is_file():
+            raise RuntimeError("dbus: service activation helper was not installed")
+        # The final initramfs normalizes ownership to root:root, so use 4755.
+        # The helper itself still accepts calls only from the messagebus UID.
+        helper.chmod(0o4755)
     # pkg-config hands meson directories with the build sysroot prepended, so a package can install files to
     # <build>/sysroot/usr/share/... inside its stage. The part after "/sysroot" is exactly the directory it
     # meant, so move the file there (logged), and fail for anything else installed under a build path.
@@ -558,6 +572,34 @@ def session_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Pat
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
+def meldra_desktop_apps_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Build Meldra's compact GTK core applications."""
+    del cache
+    unit = work / pkg.name
+    unit.mkdir()
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    (stage / "usr/bin").mkdir(parents=True)
+    (stage / "usr/share/applications").mkdir(parents=True)
+    env = {**os.environ, "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"}
+    flags = subprocess.run(["pkg-config", "--cflags", "--libs", "gtk4"], env=env,
+                           capture_output=True, text=True, check=True).stdout.split()
+    binary = stage / "usr/bin/meldra-desktop-app"
+    subprocess.run(["gcc", f"--sysroot={root}", "-std=gnu11", "-O2", "-Wall", "-Wextra", "-Werror",
+                    "-Wno-deprecated-declarations",
+                    "-o", str(binary), "desktop/meldra-apps.c", *flags,
+                    "-Wl,--allow-shlib-undefined",
+                    f"-Wl,-rpath-link,{root}/usr/lib", f"-Wl,-rpath-link,{root}/lib64"], check=True)
+    require_glibc_elf(binary)
+    for name in ("files", "text-editor", "settings"):
+        (stage / "usr/bin" / f"meldra-{name}").symlink_to("meldra-desktop-app")
+    for launcher in Path("desktop/applications").glob("*.desktop"):
+        shutil.copy2(launcher, stage / "usr/share/applications" / launcher.name)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
 def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     unit = work / pkg.name
     unit.mkdir()
@@ -627,6 +669,29 @@ def duktape_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Pat
         f"Name: duktape\nDescription: Embeddable JavaScript engine\nVersion: {lock['version']}\n"
         "Libs: -L${libdir} -lduktape\nCflags: -I${includedir}\n")
     require_glibc_elf(lib / built.name)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def rtkit_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Build rtkit without relying on the host-only xxd utility."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    xml = (upstream / "org.freedesktop.RealtimeKit1.xml").read_bytes()
+    (upstream / "xml-introspection.h").write_text(
+        ",".join(f"0x{byte:02x}" for byte in xml) + "\n", encoding="ascii"
+    )
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    cross = desktop.cross_file(unit, sysroot)
+    build_dir, stage = unit / "build", unit / "package/root"
+    subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), "--prefix=/usr",
+                    "--cross-file", str(cross), *pkg.options], check=True)
+    subprocess.run([*desktop.MESON, "compile", "-C", str(build_dir)], check=True)
+    subprocess.run([*desktop.MESON, "install", "-C", str(build_dir), "--destdir", str(stage)], check=True)
+    daemon = stage / pkg.pattern
+    if not daemon.is_file():
+        raise RuntimeError(f"rtkit daemon not installed: {daemon}")
+    require_glibc_elf(daemon)
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
@@ -746,6 +811,17 @@ PACKAGES = [
                  "-Dintrospection=true", "-Dgettext=false", "-Dexamples=false",
                  "-Dpolkitd_user=root", "--sysconfdir=/etc", "--localstatedir=/var"),
         pattern="libpolkit-agent-1.so.0.*",
+    ),
+    Package(
+        "rtkit", ("glibc", "dbus", "expat", "libcap", "polkit", "glib", "libffi", "pcre2", "zlib",
+                  "duktape", "elogind", "util-linux", "eudev"), kind="custom",
+        options=("-Dlibsystemd=disabled", "-Dinstalled_tests=false", "-Dlibexecdir=/usr/libexec",
+                 "-Ddbus_systemservicedir=/usr/share/dbus-1/system-services",
+                 "-Ddbus_interfacedir=/usr/share/dbus-1/interfaces",
+                 "-Ddbus_rulesdir=/usr/share/dbus-1/system.d",
+                 "-Dpolkit_actiondir=/usr/share/polkit-1/actions",
+                 "-Dsystemd_systemunitdir=/usr/lib/systemd/system"),
+        pattern="usr/libexec/rtkit-daemon",
     ),
     Package(
         "libpsl", ("glibc",),
@@ -907,6 +983,7 @@ PACKAGES = [
         pattern="libpam.so.0.*",
     ),
     Package("meldra-session", ("glibc", "linux-pam", "libxcrypt", "elogind"), kind="custom"),
+    Package("meldra-desktop-apps", ("glibc", "glib", "gtk"), kind="custom"),
     Package("gi-typelibs", ("glibc", "glib"), kind="custom"),
     Package(
         "json-c", ("glibc",), kind="cmake",
@@ -961,8 +1038,8 @@ PACKAGES = [
         "geoclue", ("glibc", "glib", "libffi", "pcre2", "zlib", "libsoup", "libpsl", "nghttp2", "sqlite", "libxml2", "json-glib", "dbus"), introspect=True,
         options=("-Dlibgeoclue=true", "-Dintrospection=true", "-Dvapi=false", "-Dgtk-doc=false",
                  "-Dwifi-source=false", "-D3g-source=false", "-Dcdma-source=false", "-Dmodem-gps-source=false",
-                 "-Dnmea-source=false", "-Dstatic-source=false", "-Dip-source=false", "-Dcompass=false",
-                 "-Denable-backend=false", "-Ddemo-agent=false", "-Ddbus-sys-dir=/usr/share/dbus-1/system.d",
+                 "-Dnmea-source=false", "-Dstatic-source=false", "-Dip-source=true", "-Dcompass=false",
+                 "-Denable-backend=true", "-Ddemo-agent=false", "-Ddbus-sys-dir=/usr/share/dbus-1/system.d",
                  "--sysconfdir=/etc", "--localstatedir=/var"),
         pattern="libgeoclue-2.so.0.*",
     ),
@@ -1178,8 +1255,15 @@ def build_host_gi(lock: dict, cache: Path, work: Path) -> Path:
     wrapper in the cross file, which is the usual way to introspect in a cross build.
     """
     prefix = HOST_GI.resolve()
-    if (prefix / "bin/g-ir-scanner").is_file():
-        return prefix
+    scanner = prefix / "bin/g-ir-scanner"
+    extension = prefix / "lib/gobject-introspection/giscanner" / ("_giscanner" + sysconfig.get_config_var("EXT_SUFFIX"))
+    if scanner.is_file():
+        if extension.is_file():
+            return prefix
+        raise RuntimeError(
+            f"cached gobject-introspection does not match {sys.version.split()[0]}; "
+            "rebuild it with development headers for the current Python"
+        )
     upstream = source(lock, cache, work / "host-gi-source")
     build_dir = work / "host-gi-build"
     subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), f"--prefix={prefix}",

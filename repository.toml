@@ -65,6 +65,12 @@ status = "built"
 dependencies = ["gnome-backgrounds"]
 
 [[package]]
+name = "meldra-desktop-apps"
+version = "0.1.0"
+status = "built"
+dependencies = ["glibc", "glib", "gtk"]
+
+[[package]]
 name = "libdrm"
 version = "2.4.134"
 status = "built"
@@ -411,6 +417,12 @@ name = "polkit"
 version = "128"
 status = "built"
 dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "expat", "duktape", "elogind", "dbus", "libcap", "util-linux", "eudev"]
+
+[[package]]
+name = "rtkit"
+version = "0.14"
+status = "built"
+dependencies = ["glibc", "dbus", "expat", "libcap", "polkit"]
 
 [[package]]
 name = "evolution-data-server"

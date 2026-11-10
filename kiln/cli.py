@@ -60,11 +60,22 @@ def build(source: Path, output: Path | None = None) -> str:
     return f"built {output} ({_digest(output)})"
 
 
+# The only files a package may install setuid or setgid, keyed by package name. Each is a small audited helper
+# that must run privileged; any other privileged file makes the install fail instead of silently gaining root.
+SETUID_ALLOWLIST = frozenset({
+    ("polkit", "root/usr/lib/polkit-1/polkit-agent-helper-1"),   # authenticates the user for polkit agents
+    ("dbus", "root/usr/libexec/dbus-daemon-launch-helper"),       # starts system bus services on demand
+})
+
+
 def install(package: Path, root: Path) -> str:
     with tempfile.TemporaryDirectory(prefix="kiln-") as temporary:
         stage = Path(temporary)
         with tarfile.open(package, "r:*") as archive:
-            archive.extractall(stage, members=_safe_members(archive), filter="data")
+            members = list(_safe_members(archive))
+            archive.extractall(stage, members=members, filter="data")
+            # Python's data filter clears setuid/setgid bits; they are restored below only for allowlisted files.
+            privileged = [m for m in members if m.isfile() and m.mode & 0o6000]
         manifest_path = stage / "KILN.toml"
         if not manifest_path.is_file():
             raise PackageError("package has no KILN.toml")
@@ -76,6 +87,10 @@ def install(package: Path, root: Path) -> str:
         payload = stage / "root"
         if not payload.is_dir():
             raise PackageError("package has no root payload")
+        for member in privileged:
+            if (name, member.name) not in SETUID_ALLOWLIST:
+                raise PackageError(f"{name}: setuid/setgid file is not allowlisted: {member.name}")
+            (stage / member.name).chmod(member.mode & 0o7777)
         database = root / DB_PATH
         database.mkdir(parents=True, exist_ok=True)
         dependencies = manifest.get("package", {}).get("dependencies", [])

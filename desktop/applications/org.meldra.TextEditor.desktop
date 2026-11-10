@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Text Editor
+Comment=Edit plain text files
+Exec=meldra-text-editor
+Icon=accessories-text-editor
+Terminal=false
+Type=Application
+Categories=GTK;Utility;TextEditor;

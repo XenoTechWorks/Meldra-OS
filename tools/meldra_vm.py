@@ -90,7 +90,7 @@ def start(args: argparse.Namespace) -> int:
     if qemu_running():
         print("a qemu-system process is already running; stop it first (one VM at a time)", file=sys.stderr)
         return 1
-    for needed in (Path(args.kernel), Path(args.initrd)):
+    for needed in ((Path(args.iso),) if args.iso else (Path(args.kernel), Path(args.initrd))):
         if not needed.is_file():
             print(f"missing {needed}", file=sys.stderr)
             return 1
@@ -102,8 +102,8 @@ def start(args: argparse.Namespace) -> int:
     qemu = [
         "qemu-system-x86_64", "-machine", "q35,accel=kvm:tcg", "-cpu", "max",
         "-m", str(args.memory), "-smp", str(args.cpus),
-        "-kernel", args.kernel, "-initrd", args.initrd,
-        "-append", args.append,
+        *(["-cdrom", args.iso, "-boot", "d"] if args.iso else
+          ["-kernel", args.kernel, "-initrd", args.initrd, "-append", args.append]),
         "-device", "virtio-vga", "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci",
         "-display", args.display,
         "-monitor", f"unix:{MONITOR},server=on,wait=off",
@@ -240,6 +240,7 @@ def main() -> int:
     s.add_argument("--initrd", default="build/meldra-gnome-initramfs.cpio.gz")
     s.add_argument("--memory", type=int, default=4096)
     s.add_argument("--cpus", type=int, default=2)
+    s.add_argument("--iso", help="boot this ISO from a virtual CD (through its bootloader) instead of -kernel/-initrd")
     s.add_argument("--display", default="none", help="QEMU display backend; 'gtk' opens a window you can use")
     s.add_argument("--append", default="console=ttyS0 rdinit=/init panic=1 loglevel=6")
     s.set_defaults(run=start)
