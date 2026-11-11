@@ -142,3 +142,16 @@ CONFIG_INPUT_MOUSEDEV=y
 # --- Test hardware ---
 # Simulated Wi-Fi radios: lets CI and QEMU exercise wpa_supplicant/NetworkManager with no Wi-Fi card.
 CONFIG_MAC80211_HWSIM=m
+
+# --- Firmware and live media ---
+# Firmware ships xz-compressed (about a third of the size); the kernel decompresses it on load.
+CONFIG_FW_LOADER_COMPRESS=y
+CONFIG_FW_LOADER_COMPRESS_XZ=y
+CONFIG_FW_LOADER_COMPRESS_ZSTD=y
+# A squashfs live image with a tmpfs overlay (instead of unpacking everything into RAM).
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_XZ=y
+CONFIG_SQUASHFS_ZSTD=y
+CONFIG_OVERLAY_FS=y
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_ISO9660_FS=y
