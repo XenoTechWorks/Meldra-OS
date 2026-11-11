@@ -35,6 +35,8 @@ ROOTS = (
     "librsvg", "upower", "geoclue", "geocode-glib", "libgweather", "ibus", "gnome-settings-daemon",
     "bubblewrap", "adwaita-icon-theme", "hicolor-icon-theme", "foot", "rtkit", "meldra-desktop-apps",
     "linux", "linux-modules", "meldra-installer", "meldra-greeter",
+    # A real shell for the terminal: bash and the GNU/procps tools (busybox remains /bin/sh for system scripts).
+    "bash", "coreutils", "grep", "sed", "findutils", "gawk", "diffutils", "less", "procps-ng", "fastfetch",
 )
 
 PASSWD = (
@@ -44,7 +46,7 @@ PASSWD = (
     "gdm:x:121:121:GDM:/var/lib/gdm:/bin/false\n"
     "rtkit:x:122:122:RealtimeKit:/proc:/bin/false\n"
     "greeter:x:123:123:Login screen:/var/lib/greeter:/bin/false\n"
-    "meldra:x:1000:1000:Meldra:/home/meldra:/bin/sh\n"
+    "meldra:x:1000:1000:Meldra:/home/meldra:/bin/bash\n"
 )
 GROUP = (
     "root:x:0:\nkmem:x:2:\ntty:x:5:\ndisk:x:6:\nlp:x:7:\ndialout:x:18:\n"
@@ -186,14 +188,16 @@ def main() -> int:
     (etc / "machine-id").write_text(uuid.uuid4().hex + "\n", encoding="utf-8")
     (etc / "hostname").write_text("meldra\n", encoding="utf-8")
     # Login shells; pkexec refuses to run for a user whose shell is not listed here.
-    (etc / "shells").write_text("/bin/sh\n/bin/ash\n", encoding="utf-8")
+    (etc / "shells").write_text("/bin/sh\n/bin/ash\n/bin/bash\n/usr/bin/bash\n", encoding="utf-8")
+    shutil.copy2("init/shell/profile", etc / "profile")
+    shutil.copy2("init/shell/bash.bashrc", etc / "bash.bashrc")
     (etc / "ld.so.conf").write_text("/usr/lib64\n/usr/lib\n", encoding="utf-8")
     for directory in ("home/meldra", "var/lib/dbus", "run"):
         (root / directory).mkdir(parents=True, exist_ok=True)
 
     # foot (the terminal) has no terminfo entry in this image, so ask for the widely understood xterm one.
     (etc / "xdg/foot").mkdir(parents=True, exist_ok=True)
-    (etc / "xdg/foot/foot.ini").write_text("[main]\nterm=xterm-256color\nfont=DejaVu Sans Mono:size=11\n", encoding="utf-8")
+    (etc / "xdg/foot/foot.ini").write_text("[main]\nterm=xterm-256color\nfont=DejaVu Sans Mono:size=11\nlogin-shell=yes\ninitial-window-size-chars=110x32\n", encoding="utf-8")
 
     # Only the main Foot launcher belongs in the app grid; its server and client entries are for scripting.
     for hidden in ("foot-server.desktop", "footclient.desktop"):

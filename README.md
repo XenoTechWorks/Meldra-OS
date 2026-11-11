@@ -64,7 +64,7 @@ three minimal Meldra apps: Files, Text Editor and Settings.</em></p>
 
 <p align="center"><em>The foot terminal, launched from the app grid by mouse and driven from the keyboard.</em></p>
 
-Working: keyboard and mouse input, the Foot terminal, polkit authentication-agent registration, UPower,
+Working: keyboard and mouse input, the Foot terminal running bash with GNU coreutils, grep, sed, findutils, gawk, less and procps (plus fastfetch with the Meldra logo; busybox remains only as /bin/sh for system scripts), polkit authentication-agent registration, UPower,
 AccountsService, GeoClue, RealtimeKit, and power off/reboot from the user's session. Files, Text Editor and Settings
 are small Meldra placeholder apps (a file browser, a single-document editor, and a dark-mode switch), not Nautilus,
 GNOME Text Editor or GNOME Settings. Wired networking works (DHCP, DNS and HTTP over busybox's udhcpc; no

@@ -709,3 +709,75 @@ version = "0.2.1"
 url = "https://github.com/cage-kiosk/cage/releases/download/v0.2.1/cage-0.2.1.tar.gz"
 sha256 = "fc1238e3aa5b82787a95d49cb3e1bac0671e4d3a40090087848f43f3e1f63a98"
 role = "kiosk compositor the login screen runs in; GitHub-recorded digest"
+
+[gnome.bash]
+version = "5.3"
+url = "https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz"
+sha256 = "0d5cd86965f869a26cf64f4b71be7b96f90a3ba8b3d74e27e8e9d9d5550f31ba"
+role = "real shell toolset; GNU release signature verified against gnu-keyring.gpg"
+
+[gnome.coreutils]
+version = "9.12"
+url = "https://ftp.gnu.org/gnu/coreutils/coreutils-9.12.tar.xz"
+sha256 = "a480198559733e9b3da999e90543ac6f888a2caa544d8d664c5a1f17e528e210"
+role = "real shell toolset; GNU release signature verified against gnu-keyring.gpg"
+
+[gnome.grep]
+version = "3.12"
+url = "https://ftp.gnu.org/gnu/grep/grep-3.12.tar.xz"
+sha256 = "2649b27c0e90e632eadcd757be06c6e9a4f48d941de51e7c0f83ff76408a07b9"
+role = "real shell toolset; GNU release signature verified against gnu-keyring.gpg"
+
+[gnome.sed]
+version = "4.10"
+url = "https://ftp.gnu.org/gnu/sed/sed-4.10.tar.xz"
+sha256 = "b8e72182b2ec96a3574e2998c47b7aaa64cc20ce000d8e9ac313cc07cecf28c7"
+role = "real shell toolset; GNU release signature verified against gnu-keyring.gpg"
+
+[gnome.findutils]
+version = "4.11.0"
+url = "https://ftp.gnu.org/gnu/findutils/findutils-4.11.0.tar.xz"
+sha256 = "bfd19cb06cc71f3352d567e90284d8cdac02ac89774bbeadf0b533b0c11432fd"
+role = "real shell toolset; GNU release signature verified against gnu-keyring.gpg"
+
+[gnome.gawk]
+version = "5.4.1"
+url = "https://ftp.gnu.org/gnu/gawk/gawk-5.4.1.tar.xz"
+sha256 = "07f6f7342b7febe4313fc2c2542ad93d64fe20ad8717200109f105a826f5fd37"
+role = "real shell toolset; GNU release signature verified against gnu-keyring.gpg"
+
+[gnome.diffutils]
+version = "3.12"
+url = "https://ftp.gnu.org/gnu/diffutils/diffutils-3.12.tar.xz"
+sha256 = "7c8b7f9fc8609141fdea9cece85249d308624391ff61dedaf528fcb337727dfd"
+role = "real shell toolset; GNU release signature verified against gnu-keyring.gpg"
+
+[gnome.readline]
+version = "8.3"
+url = "https://ftp.gnu.org/gnu/readline/readline-8.3.tar.gz"
+sha256 = "fe5383204467828cd495ee8d1d3c037a7eba1389c22bc6a041f627976f9061cc"
+role = "real shell toolset; GNU release signature verified against gnu-keyring.gpg"
+
+[gnome.ncurses]
+version = "6.6"
+url = "https://invisible-mirror.net/archives/ncurses/ncurses-6.6.tar.gz"
+sha256 = "355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11"
+role = "terminal library for bash, less, procps; signature verified with Thomas Dickey's key 19882D92DDA4C400C22C0D56CC2AF4472167BE03"
+
+[gnome.fastfetch]
+version = "2.71.0"
+url = "https://github.com/fastfetch-cli/fastfetch/archive/refs/tags/2.71.0.tar.gz"
+sha256 = "e71d93de41e8e4b2554c36d2ae51758112a21ecf3a8c98605a2c689251e62987"
+role = "real shell toolset; sha512 matches Alpine's APKBUILD"
+
+[gnome.less]
+version = "710"
+url = "https://www.greenwoodsoftware.com/less/less-710.tar.gz"
+sha256 = "d1008fb78dcae1323ddab664bcb352a61f022b1b131bd8018548e021d975ec7a"
+role = "real shell toolset; sha512 matches Alpine's APKBUILD"
+
+[gnome.procps_ng]
+version = "4.0.7"
+url = "https://sourceforge.net/projects/procps-ng/files/Production/procps-ng-4.0.7.tar.xz"
+sha256 = "9d2021f47a4501c667862c9942a92d1953694b21d11bcd1702e83eb594e3d67d"
+role = "real shell toolset; sha512 matches Alpine's APKBUILD"

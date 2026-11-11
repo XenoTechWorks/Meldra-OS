@@ -753,3 +753,75 @@ name = "linux-modules"
 version = "6.18.62"
 status = "built"
 dependencies = []
+
+[[package]]
+name = "ncurses"
+version = "6.6"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "readline"
+version = "8.3"
+status = "built"
+dependencies = ["glibc", "ncurses"]
+
+[[package]]
+name = "bash"
+version = "5.3"
+status = "built"
+dependencies = ["glibc", "ncurses", "readline"]
+
+[[package]]
+name = "coreutils"
+version = "9.12"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "grep"
+version = "3.12"
+status = "built"
+dependencies = ["glibc", "pcre2"]
+
+[[package]]
+name = "sed"
+version = "4.10"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "findutils"
+version = "4.11.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "gawk"
+version = "5.4.1"
+status = "built"
+dependencies = ["glibc", "readline", "ncurses"]
+
+[[package]]
+name = "diffutils"
+version = "3.12"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "less"
+version = "710"
+status = "built"
+dependencies = ["glibc", "ncurses"]
+
+[[package]]
+name = "procps-ng"
+version = "4.0.7"
+status = "built"
+dependencies = ["glibc", "ncurses"]
+
+[[package]]
+name = "fastfetch"
+version = "2.71.0"
+status = "built"
+dependencies = ["glibc", "wayland", "libdrm", "dbus", "glib"]

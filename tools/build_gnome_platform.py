@@ -159,6 +159,74 @@ def autotools_data_build(pkg: Package, lock: dict, cache: Path, work: Path, outp
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
+def cross_autotools_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Autotools program package, cross-compiled against the Meldra sysroot (never the build machine's glibc).
+
+    `pattern` is a path under the stage root that must exist afterwards; `env` adds to the configure/make
+    environment; `post(stage, upstream, build_dir)` runs after `make install`.
+    """
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    build_dir, stage = unit / "build", unit / "package/root"
+    build_dir.mkdir()
+    env = {**os.environ, "CC": f"gcc --sysroot={root}", "CFLAGS": "-O2 -pipe",
+           "LDFLAGS": f"-Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
+           "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig", **pkg.env}
+    subprocess.run([str(upstream / "configure"), "--build=x86_64-pc-linux-gnu", "--host=x86_64-unknown-linux-gnu",
+                    "--prefix=/usr", *pkg.options], cwd=build_dir, env=env, check=True)
+    subprocess.run(["make", f"-j{os.environ.get('MELDRA_JOBS', '2')}"], cwd=build_dir, env=env, check=True)
+    subprocess.run(["make", "install", f"DESTDIR={stage}"], cwd=build_dir, env=env, check=True)
+    if pkg.post:
+        pkg.post(stage, upstream, build_dir)
+    if not (stage / pkg.pattern).exists():
+        raise RuntimeError(f"{pkg.name}: expected file not installed: {pkg.pattern}")
+    # Every dynamically linked program must link the sysroot's glibc, not the build machine's.
+    for directory in ("bin", "sbin", "usr/bin", "usr/sbin"):
+        for path in sorted((stage / directory).glob("*")):
+            if path.is_file() and not path.is_symlink() and path.read_bytes()[:4] == b"\x7fELF":
+                require_glibc_elf(path)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def ncurses_post(stage: Path, upstream: Path, build_dir: Path) -> None:
+    """Compile the terminfo database with a native tic built from the same source (the target's tic needs
+    glibc 2.44 and cannot run on the build machine), and add the usual compatibility names."""
+    native = build_dir.parent / "native-tic"
+    native.mkdir()
+    subprocess.run([str(upstream / "configure"), "--without-shared", "--without-debug", "--without-ada",
+                    "--without-cxx-binding", "--without-manpages", "--without-tests", "--enable-widec",
+                    "--disable-db-install"], cwd=native, check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["make", "-C", "include"], cwd=native, check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["make", "-C", "progs", "tic"], cwd=native, check=True, stdout=subprocess.DEVNULL)
+    terminfo = stage / "usr/share/terminfo"
+    terminfo.mkdir(parents=True, exist_ok=True)
+    subprocess.run([str(native / "progs/tic"), "-x", "-o", str(terminfo), str(upstream / "misc/terminfo.src")],
+                   check=True, env={**os.environ, "TERMINFO": str(terminfo)})
+    lib = stage / "usr/lib"
+    # Programs built elsewhere ask for the narrow names; the wide-character library serves them all.
+    for alias, target in (("libncurses.so", "libncursesw.so"), ("libncurses.so.6", "libncursesw.so.6"),
+                          ("libtinfo.so.6", "libncursesw.so.6"), ("libtinfo.so", "libncursesw.so"),
+                          ("libcurses.so", "libncursesw.so")):
+        if not (lib / alias).exists():
+            (lib / alias).symlink_to(target)
+    pc = lib / "pkgconfig"
+    for alias in ("ncurses.pc", "tinfo.pc"):
+        if (pc / "ncursesw.pc").exists() and not (pc / alias).exists():
+            (pc / alias).symlink_to("ncursesw.pc")
+
+
+def bash_post(stage: Path, upstream: Path, build_dir: Path) -> None:
+    del upstream, build_dir
+    (stage / "bin").mkdir(exist_ok=True)
+    # /bin/bash is where scripts and /etc/passwd look; the binary lives in /usr/bin.
+    if not (stage / "bin/bash").exists():
+        (stage / "bin/bash").symlink_to("../usr/bin/bash")
+
+
 def nspr_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     unit = work / pkg.name
     unit.mkdir()
@@ -415,6 +483,9 @@ def checked_build(package: Path, archive: Path):
         raise RuntimeError("files were installed under a build path: " + ", ".join(misplaced[:6]))
     for line in strip_any_sysroot_prefix(root):
         print(f"baked path fixed: {line}", flush=True)
+    # The info directory index is generated on the target by install-info; every GNU package ships its own copy,
+    # which would conflict between packages.
+    (root / "usr/share/info/dir").unlink(missing_ok=True)
     # libtool archives record absolute install paths that do not exist inside another package's sysroot, which
     # breaks anything linking through them. Nothing at runtime reads them, so none are shipped.
     for archive_file in list(root.rglob("*.la")):
@@ -606,6 +677,36 @@ def greetd_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path
         shutil.copy2(built / binary, stage / target)
         subprocess.run(["strip", "--strip-unneeded", str(stage / target)], check=True)
         require_glibc_elf(stage / target)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def fastfetch_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """fastfetch (CMake), with Meldra's square logo and config as the system-wide default."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    build_dir, stage = unit / "build", unit / "package/root"
+    env = {**os.environ, "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"}
+    flags = f"--sysroot={root} -O2"
+    subprocess.run(["cmake", "-S", str(upstream), "-B", str(build_dir), "-G", "Ninja",
+                    "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_INSTALL_PREFIX=/usr", "-DCMAKE_SYSTEM_NAME=Linux",
+                    "-DCMAKE_C_COMPILER=gcc", f"-DCMAKE_C_FLAGS={flags}", f"-DCMAKE_EXE_LINKER_FLAGS={flags}",
+                    f"-DCMAKE_FIND_ROOT_PATH={root}", "-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER",
+                    "-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY", "-DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY",
+                    "-DBUILD_TESTS=OFF", "-DBUILD_FLASHFETCH=OFF", "-DENABLE_SYSTEM_YYJSON=OFF"],
+                   env=env, check=True)
+    subprocess.run(["cmake", "--build", str(build_dir)], env=env, check=True)
+    subprocess.run(["cmake", "--install", str(build_dir), "--prefix", str(stage / "usr")], env=env, check=True)
+    binary = stage / "usr/bin/fastfetch"
+    require_glibc_elf(binary)
+    subprocess.run(["strip", "--strip-unneeded", str(binary)], check=True)
+    config = stage / "etc/xdg/fastfetch"
+    config.mkdir(parents=True)
+    shutil.copy2("assets/fastfetch/config.jsonc", config / "config.jsonc")
+    shutil.copy2("assets/fastfetch/meldra-logo.ansi", config / "meldra-logo.ansi")
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
@@ -1224,9 +1325,49 @@ PACKAGES = [
         pattern="libext2fs.so.2.*",
     ),
     Package(
-        "dosfstools", ("glibc",), kind="autotools-data", options=("--enable-compat-symlinks", "--sbindir=/usr/sbin"),
+        "dosfstools", ("glibc",), kind="cross-autotools", options=("--enable-compat-symlinks", "--sbindir=/usr/sbin"),
         pattern="usr/sbin/mkfs.fat",
     ),
+    # --- A real shell: bash with the GNU and procps tools (busybox stays as /bin/sh for system scripts) ---
+    Package(
+        "ncurses", ("glibc",), kind="cross-autotools", post=ncurses_post,
+        options=("--with-shared", "--without-normal", "--without-debug", "--without-ada", "--without-cxx-binding",
+                 "--without-manpages", "--without-tests", "--enable-widec", "--enable-pc-files",
+                 "--with-pkg-config-libdir=/usr/lib/pkgconfig", "--disable-db-install", "--disable-stripping",
+                 "--with-build-cc=gcc", "--libdir=/usr/lib"),
+        pattern="usr/lib/libncursesw.so.6",
+    ),
+    Package(
+        "readline", ("glibc", "ncurses"), kind="cross-autotools",
+        options=("--disable-static", "--with-curses", "--with-shared-termcap-library", "--libdir=/usr/lib"),
+        pattern="usr/lib/libreadline.so.8",
+    ),
+    Package(
+        "bash", ("glibc", "ncurses", "readline"), kind="cross-autotools", post=bash_post,
+        options=("--with-installed-readline", "--without-bash-malloc", "--disable-nls", "--bindir=/usr/bin"),
+        pattern="usr/bin/bash",
+    ),
+    Package(
+        "coreutils", ("glibc",), kind="cross-autotools",
+        # kill and uptime come from procps-ng.
+        options=("--disable-nls", "--enable-no-install-program=kill,uptime", "--without-selinux", "--disable-acl",
+                 "--disable-xattr", "--without-openssl", "--libexecdir=/usr/lib"),
+        pattern="usr/bin/ls",
+    ),
+    Package("grep", ("glibc", "pcre2"), kind="cross-autotools", options=("--disable-nls",), pattern="usr/bin/grep"),
+    Package("sed", ("glibc",), kind="cross-autotools", options=("--disable-nls", "--disable-acl"), pattern="usr/bin/sed"),
+    Package("findutils", ("glibc",), kind="cross-autotools", options=("--disable-nls", "--localstatedir=/var/lib/locate"),
+            pattern="usr/bin/find"),
+    Package("gawk", ("glibc", "readline", "ncurses"), kind="cross-autotools",
+            options=("--disable-nls", "--without-mpfr", "--libexecdir=/usr/lib"), pattern="usr/bin/gawk"),
+    # configure cannot run its strcasecmp test when cross-compiling; glibc's strcasecmp is correct.
+    Package("diffutils", ("glibc",), kind="cross-autotools", options=("--disable-nls",), pattern="usr/bin/diff",
+            env={"gl_cv_func_strcasecmp_works": "yes"}),
+    Package("less", ("glibc", "ncurses"), kind="cross-autotools", options=("--sysconfdir=/etc",), pattern="usr/bin/less"),
+    Package("procps-ng", ("glibc", "ncurses"), kind="cross-autotools",
+            options=("--disable-nls", "--without-systemd", "--disable-static", "--disable-kill", "--libdir=/usr/lib"),
+            pattern="usr/bin/ps"),
+    Package("fastfetch", ("glibc", "wayland", "libdrm", "dbus", "glib", "pcre2", "zlib", "libffi"), kind="custom"),
     Package("tllist", ("glibc",), kind="data", pattern="usr/include/tllist.h"),
     Package(
         "fcft", ("glibc", "tllist", "freetype", "fontconfig", "harfbuzz", "pixman"),
@@ -1630,6 +1771,33 @@ def gentle_environment(work: Path, jobs: int) -> None:
     (bin_dir / "make").write_text(strip + f'eval exec {make}/make -j{jobs} "$args"\n')
     for name in ("ninja", "make"):
         (bin_dir / name).chmod(0o755)
+    # This build machine's gcc passes its own /usr/lib/x86_64-linux-gnu (the build machine's glibc and every
+    # library installed there) to the linker as a library directory, so target links silently picked up the
+    # host's libc.so, crt files, and optional libraries Meldra does not ship (libselinux, libtinfow). For any
+    # compile with --sysroot=, a specs file replaces gcc's library directory list with: gcc's own directory
+    # (libgcc), a directory holding only the GCC runtime libraries (libstdc++ and friends, shipped as
+    # gcc-runtime), and the sysroot. -B makes the start files (crt1.o, crti.o) come from the sysroot too.
+    # Native compiles (no --sysroot) are untouched.
+    gcc_dir = Path(subprocess.run(["gcc", "-print-libgcc-file-name"], capture_output=True, text=True,
+                                  check=True).stdout.strip()).parent
+    runtime_dir = bin_dir / "gcc-runtime"
+    runtime_dir.mkdir()
+    stdcxx = Path(subprocess.run(["gcc", "-print-file-name=libstdc++.so"], capture_output=True, text=True,
+                                 check=True).stdout.strip()).resolve().parent
+    for pattern in ("libgcc_s.*", "libstdc++.*", "libsupc++.a", "libstdc++fs.a", "libstdc++exp.a", "libatomic.*", "libgomp.*",
+                    "libitm.*", "libquadmath.*"):
+        for library in sorted(stdcxx.glob(pattern)):
+            (runtime_dir / library.name).symlink_to(library)
+    specs = bin_dir / "meldra-target.specs"
+    specs.write_text(f"*link_libgcc:\n-L{gcc_dir} -L{runtime_dir} -L%R/usr/lib64 -L%R/lib64 -L%R/usr/lib\n\n")
+    for compiler in ("gcc", "g++"):
+        real = next(p for p in os.environ["PATH"].split(os.pathsep) if (Path(p) / compiler).is_file())
+        (bin_dir / compiler).write_text(
+            "#!/bin/sh\nroot=\nfor a in \"$@\"; do case \"$a\" in --sysroot=*) root=${a#--sysroot=} ;; esac; done\n"
+            "if [ -n \"$root\" ]; then\n"
+            f"  exec {real}/{compiler} -specs={specs} -Wl,-nostdlib -B\"$root/usr/lib64/\" -B\"$root/usr/lib/\" \"$@\"\nfi\n"
+            f"exec {real}/{compiler} \"$@\"\n")
+        (bin_dir / compiler).chmod(0o755)
     os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
     os.environ["MAKEFLAGS"] = f"-j{jobs}"
     os.environ["CMAKE_BUILD_PARALLEL_LEVEL"] = str(jobs)
@@ -1741,6 +1909,8 @@ def main() -> int:
                     nspr_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.name == "duktape":
                     duktape_build(pkg, lock, args.cache, work, args.output)
+                elif pkg.kind == "cross-autotools":
+                    cross_autotools_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.kind == "autotools-data":
                     autotools_data_build(pkg, lock, args.cache, work, args.output)
                 elif pkg.kind == "data":
