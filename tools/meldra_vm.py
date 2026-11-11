@@ -143,8 +143,12 @@ def start(args: argparse.Namespace) -> int:
         *(["-drive", f"file={args.disk},format=raw,if=virtio,cache=unsafe"] if args.disk else []),
         *(["-drive", f"if=pflash,format=raw,readonly=on,file={UEFI_CODE}",
            "-drive", f"if=pflash,format=raw,file={UEFI_VARS}"] if args.uefi else []),
-        "-nic", "user,model=virtio-net-pci", "-device", "virtio-vga", "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci",
-        "-display", args.display,
+        "-nic", "user,model=virtio-net-pci", "-device", "virtio-vga-gl" if args.gl else "virtio-vga", "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci",
+        # virgl needs a GL-capable display: egl-headless when no window is wanted, or gtk with gl=on.
+        "-display", (("egl-headless" if args.display == "none" else f"{args.display},gl=on") if args.gl
+                     else args.display),
+        *(["-audiodev", f"wav,id=snd0,path={args.audio_wav}", "-device", "intel-hda",
+           "-device", "hda-duplex,audiodev=snd0"] if args.audio_wav else []),
         "-monitor", f"unix:{MONITOR},server=on,wait=off",
         "-qmp", f"unix:{QMP},server=on,wait=off",
         "-chardev", f"socket,id=serial0,path={SERIAL},server=on,wait=off,logfile={LOG}",
@@ -164,7 +168,8 @@ def start(args: argparse.Namespace) -> int:
         if MONITOR.exists():
             break
         time.sleep(0.1)
-    print(f"started: {args.memory} MB, {args.cpus} CPUs, initrd {args.initrd}")
+    booted = args.iso or (args.disk if args.boot_disk else args.initrd)
+    print(f"started: {args.memory} MB, {args.cpus} CPUs, booting {booted}")
     return 0
 
 
@@ -279,6 +284,8 @@ def main() -> int:
     s.add_argument("--initrd", default="build/meldra-gnome-initramfs.cpio.gz")
     s.add_argument("--memory", type=int, default=4096)
     s.add_argument("--cpus", type=int, default=2)
+    s.add_argument("--gl", action="store_true", help="3D-accelerated virtio GPU (virgl) for testing Mesa")
+    s.add_argument("--audio-wav", help="add an Intel HDA sound card whose output QEMU records to this WAV file")
     s.add_argument("--disk", help="attach this raw disk image as a virtio drive (created, sparse, if missing)")
     s.add_argument("--disk-size", type=int, default=16, help="size in GiB when --disk is created")
     s.add_argument("--uefi", action="store_true", help="boot with UEFI firmware (edk2) instead of BIOS")

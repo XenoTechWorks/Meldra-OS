@@ -37,6 +37,11 @@ ROOTS = (
     "linux", "linux-modules", "meldra-installer", "meldra-greeter",
     # A real shell for the terminal: bash and the GNU/procps tools (busybox remains /bin/sh for system scripts).
     "bash", "coreutils", "grep", "sed", "findutils", "gawk", "diffutils", "less", "procps-ng", "fastfetch",
+    # Drivers and firmware (modules load through eudev + kmod), GPU acceleration, Wi-Fi, audio.
+    "kmod", "linux-firmware", "wireless-regdb", "mesa", "vulkan-loader", "networkmanager", "wpa-supplicant", "pipewire",
+    "wireplumber",
+    # Real GNOME apps.
+    "gnome-console", "gnome-text-editor", "nautilus", "nautilus",
 )
 
 PASSWD = (
@@ -200,6 +205,12 @@ def main() -> int:
     (etc / "xdg/foot/foot.ini").write_text("[main]\nterm=xterm-256color\nfont=DejaVu Sans Mono:size=11\nlogin-shell=yes\ninitial-window-size-chars=110x32\n", encoding="utf-8")
 
     # Only the main Foot launcher belongs in the app grid; its server and client entries are for scripting.
+    # The real GNOME apps replace Meldra's lightweight preview implementations.
+    (root / "usr/share/applications/org.meldra.Files.desktop").unlink(missing_ok=True)
+    (root / "usr/share/applications/org.meldra.TextEditor.desktop").unlink(missing_ok=True)
+    # GNOME Files replaces the placeholder file browser; VTE's demo terminal is not an app.
+    for launcher in ("org.meldra.Files.desktop", "org.gnome.Vte.App.Gtk4.desktop", "org.gnome.Vte.App.Gtk3.desktop"):
+        (root / "usr/share/applications" / launcher).unlink(missing_ok=True)
     for hidden in ("foot-server.desktop", "footclient.desktop"):
         (root / "usr/share/applications" / hidden).unlink(missing_ok=True)
 
@@ -212,6 +223,9 @@ def main() -> int:
     # place races Hearth against loginctl during startup and can create a
     # duplicate-daemon respawn loop.
     (root / "usr/share/dbus-1/system-services/org.freedesktop.login1.service").unlink(missing_ok=True)
+    # colord is built as a client library only. Its package still installs an activation file, which would make
+    # GNOME Shell repeatedly try to start the deliberately omitted daemon.
+    (root / "usr/share/dbus-1/system-services/org.freedesktop.ColorManager.service").unlink(missing_ok=True)
     # No D-Bus activation for GDM yet: the session starts directly (not through GDM's login screen), so an
     # activated GDM only runs as root to refuse the Shell's registration ("No display available"). The Shell
     # treats a missing GDM as normal. Add activation back together with the real GDM login flow.
@@ -234,6 +248,14 @@ def main() -> int:
     rules = etc / "polkit-1/rules.d"
     rules.mkdir(parents=True, exist_ok=True)
     shutil.copy2("installer/50-meldra-live-installer.rules", rules / "50-meldra-live-installer.rules")
+
+    # Modules live in /usr/lib/modules (kmod is built for that); /lib/modules points there for anything that
+    # still looks in the traditional place.
+    (root / "lib").mkdir(exist_ok=True)
+    if not (root / "lib/modules").exists():
+        (root / "lib/modules").symlink_to("../usr/lib/modules")
+    (etc / "NetworkManager").mkdir(parents=True, exist_ok=True)
+    shutil.copy2("init/networkmanager/NetworkManager.conf", etc / "NetworkManager/NetworkManager.conf")
 
     services = etc / "meldra/services"
     for name in REMOVED_SERVICES:

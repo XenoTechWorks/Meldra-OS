@@ -781,3 +781,255 @@ version = "4.0.7"
 url = "https://sourceforge.net/projects/procps-ng/files/Production/procps-ng-4.0.7.tar.xz"
 sha256 = "9d2021f47a4501c667862c9942a92d1953694b21d11bcd1702e83eb594e3d67d"
 role = "real shell toolset; sha512 matches Alpine's APKBUILD"
+
+[gnome.elfutils]
+version = "0.195"
+url = "https://sourceware.org/elfutils/ftp/0.195/elfutils-0.195.tar.bz2"
+sha256 = "37629fdf7f1f3dc2818e138fca2b8094177d6c2d0f701d3bb650a561218dc026"
+role = "libelf for Mesa's radeonsi; sha512 matches Alpine's APKBUILD"
+
+[gnome.vulkan_headers]
+version = "1.4.360"
+url = "https://github.com/khronosgroup/vulkan-headers/archive/refs/tags/v1.4.360.tar.gz"
+sha256 = "8f01247c7bbe3d1eb3fee60e19810b1503486b4342535d5e689d940b4d9414da"
+file = "vulkan-headers-1.4.360.tar.gz"
+role = "Vulkan API headers; sha512 matches Alpine's APKBUILD"
+
+[gnome.vulkan_loader]
+version = "1.4.360"
+url = "https://github.com/khronosgroup/vulkan-loader/archive/refs/tags/v1.4.360.tar.gz"
+sha256 = "be04a1332e19a1497ccf36073957c3edc220fa141c3fd3d202594218225398b1"
+file = "vulkan-loader-1.4.360.tar.gz"
+role = "libvulkan for zink and Vulkan apps; sha512 matches Alpine's APKBUILD"
+
+[gnome.kmod]
+version = "34"
+url = "https://mirrors.edge.kernel.org/pub/linux/utils/kernel/kmod/kmod-34.tar.xz"
+sha256 = "12e7884484151fbd432b6a520170ea185c159f4393c7a2c2a886ab820313149a"
+role = "modprobe and libkmod for driver autoloading; kernel.org sha256sums.asc"
+
+[gnome.pipewire]
+version = "1.6.11"
+url = "https://gitlab.freedesktop.org/PipeWire/pipewire/-/archive/1.6.11/pipewire-1.6.11.tar.gz"
+sha256 = "f3f70c4af173cc93d05070a9d412efe3ef5889bdf4ac32298e2c0d9ae1350559"
+file = "pipewire-1.6.11.tar.gz"
+role = "audio server (also PulseAudio and JACK compatible); sha512 matches Alpine's APKBUILD"
+
+[gnome.wireplumber]
+version = "0.5.19"
+url = "https://gitlab.freedesktop.org/PipeWire/wireplumber/-/archive/0.5.19/wireplumber-0.5.19.tar.gz"
+sha256 = "f9454eae3a5a6ca903c05ead2a7e47d7d3957fb0ffac3ebb11d92842603ae80f"
+file = "wireplumber-0.5.19.tar.gz"
+role = "PipeWire session manager; sha512 matches Alpine's APKBUILD"
+
+[gnome.networkmanager]
+version = "1.58.1"
+url = "https://gitlab.freedesktop.org/NetworkManager/NetworkManager/-/archive/1.58.1/NetworkManager-1.58.1.tar.gz"
+sha256 = "8d112eefc0e0e15d44e93453a8a16760ec07a4037e1f93097abdf55abd5dca2d"
+file = "NetworkManager-1.58.1.tar.gz"
+role = "network management, Wi-Fi, GNOME network indicator; sha512 matches Alpine's APKBUILD"
+
+[gnome.lua]
+version = "5.4.9"
+url = "https://www.lua.org/ftp/lua-5.4.9.tar.gz"
+sha256 = "2335b6c582a52654f94612bf10d2f4672805d05329aa6568b1d8cd9e5c6fb8e6"
+file = "lua-5.4.9.tar.gz"
+role = "scripting for WirePlumber; sha512 matches Alpine's APKBUILD"
+
+[gnome.wpa_supplicant]
+version = "2.11"
+url = "https://w1.fi/releases/wpa_supplicant-2.11.tar.gz"
+sha256 = "912ea06f74e30a8e36fbb68064d6cdff218d8d591db0fc5d75dee6c81ac7fc0a"
+file = "wpa_supplicant-2.11.tar.gz"
+role = "Wi-Fi authentication (WPA2/WPA3) for NetworkManager; sha512 matches Alpine's APKBUILD"
+
+[gnome.libndp]
+version = "1.9"
+url = "https://github.com/jpirko/libndp/archive/v1.9.tar.gz"
+sha256 = "e564f5914a6b1b799c3afa64c258824a801c1b79a29e2fe6525b682249c65261"
+file = "libndp-1.9.tar.gz"
+role = "IPv6 neighbour discovery for NetworkManager; sha512 matches Alpine's APKBUILD"
+
+[gnome.libnl]
+version = "3.12.0"
+url = "https://github.com/thom311/libnl/releases/download/libnl3_12_0/libnl-3.12.0.tar.gz"
+sha256 = "fc51ca7196f1a3f5fdf6ffd3864b50f4f9c02333be28be4eeca057e103c0dd18"
+file = "libnl-3.12.0.tar.gz"
+role = "netlink library for wpa_supplicant; sha512 matches Alpine's APKBUILD"
+
+[gnome.libadwaita]
+version = "1.9.4"
+url = "https://download.gnome.org/sources/libadwaita/1.9/libadwaita-1.9.4.tar.xz"
+sha256 = "f5ab3453ee743dc293cdf96d6821789cd20e8d125d9b41637703c12bfa4162ee"
+role = "widgets and styling for GNOME 50 apps"
+
+[gnome.gtksourceview]
+version = "5.20.0"
+url = "https://download.gnome.org/sources/gtksourceview/5.20/gtksourceview-5.20.0.tar.xz"
+sha256 = "e38bcd23f52b86eadf0fe4d8bde698e3a8ca102322b8b4cf1a51ac294a448c1b"
+role = "text view with syntax highlighting for Text Editor"
+
+[gnome.vte]
+version = "0.84.1"
+url = "https://download.gnome.org/sources/vte/0.84/vte-0.84.1.tar.xz"
+sha256 = "aca1caa8478aebcdbb1d67897fb3511eb7601debae6810e16a15b6fa25f31ac8"
+role = "terminal widget for GNOME Console"
+
+[gnome.gnome_console]
+version = "50.0"
+url = "https://download.gnome.org/sources/gnome-console/50/gnome-console-50.0.tar.xz"
+sha256 = "e4950207f0547e6a6c0f18eebfcf6e1a10461eab0f2fae0aae512b1044c7ac6e"
+role = "GNOME's terminal"
+
+[gnome.gnome_text_editor]
+version = "50.1"
+url = "https://download.gnome.org/sources/gnome-text-editor/50/gnome-text-editor-50.1.tar.xz"
+sha256 = "f68036b09d378faa883bfe936e479c6ff37027c2ffed101daf912df70c51d0e6"
+role = "GNOME's text editor"
+
+[gnome.libspelling]
+version = "0.4.11"
+url = "https://download.gnome.org/sources/libspelling/0.4/libspelling-0.4.11.tar.xz"
+sha256 = "52e53ec3fba0f604cfd0931e26af7f7241a0d4f0208dd5574f43b3589f6d28b2"
+role = "spell checking for Text Editor"
+
+[gnome.lz4]
+version = "1.10.0"
+url = "https://github.com/lz4/lz4/archive/v1.10.0.tar.gz"
+sha256 = "537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b"
+file = "lz4-1.10.0.tar.gz"
+role = "compression for VTE scrollback; sha512 matches Alpine's APKBUILD"
+
+[gnome.linux_firmware]
+version = "20261019"
+url = "https://mirrors.edge.kernel.org/pub/linux/kernel/firmware/linux-firmware-20261019.tar.xz"
+sha256 = "a10d1ab5baf2c74ba92e8c7cf313e691696c26bddfa6df00db795e48d70cd4ca"
+role = "firmware for GPUs (amdgpu, nvidia, i915), Wi-Fi and network chips; kernel.org sha256sums.asc"
+
+[gnome.openssl]
+version = "3.5.9"
+url = "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz"
+sha256 = "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a"
+role = "TLS and crypto for wpa_supplicant (WPA3) and NetworkManager; GitHub-recorded digest"
+
+[gnome.nautilus]
+version = "50.4"
+url = "https://download.gnome.org/sources/nautilus/50/nautilus-50.4.tar.xz"
+sha256 = "3ad74b559f99a7059f203687153ed85fa8d75e933e45987232545f70db83fe55"
+role = "GNOME Files"
+
+[gnome.gnome_autoar]
+version = "0.4.5"
+url = "https://download.gnome.org/sources/gnome-autoar/0.4/gnome-autoar-0.4.5.tar.xz"
+sha256 = "838c5306fc38bfaa2f23abe24262f4bf15771e3303fb5dcb74f5b9c7a615dabe"
+role = "archive handling for Files"
+
+[gnome.tinysparql]
+version = "3.11.1"
+url = "https://download.gnome.org/sources/tinysparql/3.11/tinysparql-3.11.1.tar.xz"
+sha256 = "cfd46021ee1514ad435e714f7aa1ec7a787c7f516a94f4c7438897ee3d6eca1e"
+role = "metadata store Files searches through"
+
+[gnome.gexiv2]
+version = "0.16.2"
+url = "https://download.gnome.org/sources/gexiv2/0.16/gexiv2-0.16.2.tar.xz"
+sha256 = "aad9e240fdffbe85e390f46ee0a567e251baea5c29c3d8690260388683dc8d0a"
+role = "image metadata for Files"
+
+[gnome.libportal]
+version = "0.11.0"
+url = "https://github.com/flatpak/libportal/releases/download/0.11.0/libportal-0.11.0.tar.xz"
+sha256 = "abb9e452a1c372133bd3eb8f0bb30d07b2d0a8fb02001c4155cf287555db4040"
+role = "portal client library for Files; GitHub-recorded digest"
+
+[gnome.gstreamer]
+version = "1.28.9"
+url = "https://gstreamer.freedesktop.org/src/gstreamer/gstreamer-1.28.9.tar.xz"
+sha256 = "6dbf744f583131a34845cc641e803843766a9ba80ce00378a9043fd6d8d5fb38"
+role = "media framework (Files uses it for audio/video metadata); upstream .sha256sum"
+
+[gnome.gst_plugins_base]
+version = "1.28.9"
+url = "https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-1.28.9.tar.xz"
+sha256 = "c1fda668b520e6aef763c0eb962c032c9fe52bce322e8b00c69b4e9e847bddc1"
+role = "GStreamer base plugins and libraries (pbutils, tag); upstream .sha256sum"
+
+[gnome.libarchive]
+version = "3.8.11"
+url = "https://github.com/libarchive/libarchive/releases/download/v3.8.11/libarchive-3.8.11.tar.xz"
+sha256 = "a3dc0872b1b39da34dc18ef1b944f0f11ffd37425d70ae04be679279f1cf43d2"
+role = "archive formats for gnome-autoar; GitHub-recorded digest"
+
+[gnome.exiv2]
+version = "0.28.9"
+url = "https://github.com/Exiv2/exiv2/archive/refs/tags/v0.28.9/exiv2-v0.28.9.tar.gz"
+sha256 = "700b76b97695b2fab4ef8c79619c68ae57d09e0c130724791cafbd39e0eb4aef"
+file = "exiv2-0.28.9.tar.gz"
+role = "image metadata library for gexiv2; sha512 matches Alpine's APKBUILD"
+
+[gnome.xz]
+version = "5.8.4"
+url = "https://github.com/tukaani-project/xz/releases/download/v5.8.4/xz-5.8.4.tar.xz"
+sha256 = "4ce24038fd4221e0d13bc1a2de7a4db56e90b92b3bf75321f6c14be73f65de4b"
+role = "liblzma and xz, for .xz archives in Files; GitHub-recorded digest"
+
+[gnome.appstream]
+version = "1.2.1"
+url = "https://www.freedesktop.org/software/appstream/releases/AppStream-1.2.1.tar.xz"
+sha256 = "7df664fd3ad3b1640c6a0ff77fa84f9fabe264111bf1fe8f5df3444d6d4caaca"
+role = "app metadata (libadwaita's About dialog); sha512 matches Alpine's APKBUILD"
+
+[gnome.libfyaml]
+version = "0.9.6"
+url = "https://github.com/pantoniou/libfyaml/releases/download/v0.9.6/libfyaml-0.9.6.tar.gz"
+sha256 = "a59cc3331e2eb903ec36933ad52a45888041cac31e44f553a00511131242c483"
+role = "YAML parser for AppStream; sha512 matches Alpine's APKBUILD"
+
+[gnome.curl]
+version = "8.23.0"
+url = "https://curl.se/download/curl-8.23.0.tar.xz"
+sha256 = "8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5"
+role = "HTTP(S) client library and tool; sha512 matches Alpine's APKBUILD"
+
+[gnome.libxmlb]
+version = "0.3.30"
+url = "https://github.com/hughsie/libxmlb/releases/download/0.3.30/libxmlb-0.3.30.tar.xz"
+sha256 = "2cb894b873aac5fc9e9b6228d4e795f7236d16e429ed2de8f95179a131be3a68"
+role = "XML index library for AppStream; GitHub-recorded digest"
+
+[gnome.libgtop]
+version = "2.41.3"
+url = "https://download.gnome.org/sources/libgtop/2.41/libgtop-2.41.3.tar.xz"
+sha256 = "775676df958e2ea2452f7568f28b2ea581063d312773dd5c0b7624c1b9b2da8c"
+role = "process and system statistics (Console, Settings)"
+
+[gnome.editorconfig]
+version = "0.12.11"
+url = "https://github.com/editorconfig/editorconfig-core-c/archive/v0.12.11.tar.gz"
+sha256 = "9d8b420b56a969ea3cf784861c72d26fa0e158fa1494d732df2c8a1480d36a5c"
+file = "editorconfig-core-c-0.12.11.tar.gz"
+role = "per-project editor settings for Text Editor; sha512 matches Alpine's APKBUILD"
+
+[host_tools.blueprint_compiler]
+version = "0.22.2"
+url = "https://download.gnome.org/sources/blueprint-compiler/0.22/blueprint-compiler-0.22.2.tar.xz"
+sha256 = "231d72efbac931c235ac3e022fe94982095c20d88721d9a8dcf60152f2017e07"
+role = "host Blueprint compiler for GNOME application UI sources; official GNOME sha256sum"
+
+[gnome.wireless_regdb]
+version = "2026.09.03"
+url = "https://cdn.kernel.org/pub/software/network/wireless-regdb/wireless-regdb-2026.09.03.tar.xz"
+sha256 = "b22e0901227b820cd1c280abe681a15b773a5103a5e10dc442e94ebb34cbf58d"
+role = "Linux wireless regulatory database; kernel.org release with sha256sums.asc"
+
+[gnome.libnma]
+version = "1.10.6"
+url = "https://download.gnome.org/sources/libnma/1.10/libnma-1.10.6.tar.xz"
+sha256 = "53a6fb2b190ad37c5986caed3e98bede7c3c602399ee4f93c8fc054303d76dab"
+role = "NetworkManager GTK 4 helpers (Wi-Fi dialogs) for GNOME Shell and Settings"
+
+[gnome.gtk3]
+version = "3.24.43"
+url = "https://download.gnome.org/sources/gtk+/3.24/gtk+-3.24.43.tar.xz"
+sha256 = "7e04f0648515034b806b74ae5d774d87cffb1a2a96c468cb5be476d51bf2f3c7"
+role = "GTK 3 (libnma's GTK 3 library; Firefox later)"

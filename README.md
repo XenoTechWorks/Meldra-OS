@@ -64,11 +64,23 @@ three minimal Meldra apps: Files, Text Editor and Settings.</em></p>
 
 <p align="center"><em>The foot terminal, launched from the app grid by mouse and driven from the keyboard.</em></p>
 
-Working: keyboard and mouse input, the Foot terminal running bash with GNU coreutils, grep, sed, findutils, gawk, less and procps (plus fastfetch with the Meldra logo; busybox remains only as /bin/sh for system scripts), polkit authentication-agent registration, UPower,
-AccountsService, GeoClue, RealtimeKit, and power off/reboot from the user's session. Files, Text Editor and Settings
-are small Meldra placeholder apps (a file browser, a single-document editor, and a dark-mode switch), not Nautilus,
-GNOME Text Editor or GNOME Settings. Wired networking works (DHCP, DNS and HTTP over busybox's udhcpc; no
-NetworkManager or Wi-Fi yet, so GNOME shows no network indicator). Audio and hardware acceleration remain.
+Working, checked in QEMU:
+
+- **Apps:** GNOME Console (bash with GNU coreutils, grep, sed, findutils, gawk, less, procps, and fastfetch with the
+  Meldra logo), GNOME Files (Nautilus) and GNOME Text Editor. Settings is still a small Meldra placeholder.
+- **GPU acceleration:** Mesa 26 with virgl (QEMU 3D), radeonsi and RADV for AMD (compiled with ACO, no LLVM),
+  nouveau and zink. Checked with virgl: `virgl (AMD Radeon ...)`. Intel (iris) needs LLVM/clang at build time and
+  comes later. GPU, Wi-Fi and network firmware ships xz-compressed (275 MB).
+- **Networking:** NetworkManager with wpa_supplicant (WPA2/WPA3); GNOME shows the network icon with Wired and Wi-Fi
+  tiles. Drivers load automatically (eudev + kmod). Wi-Fi was tested with simulated radios (mac80211_hwsim): scan
+  and a WPA2 connection work; real Wi-Fi cards are untested.
+- **Audio:** PipeWire, WirePlumber and pipewire-pulse; GNOME's volume control works, and a test sound played
+  through an emulated Intel HDA card was recorded with real signal.
+- polkit, UPower, AccountsService, GeoClue, RealtimeKit, and power off/reboot from the user's session.
+
+<p align="center">
+  <img src="docs/screenshots/gnome-network.png" width="720" alt="GNOME quick settings on Meldra with Wired and Wi-Fi tiles, volume slider and network icon">
+</p>
 
 ## Install to disk and log in
 
@@ -103,11 +115,11 @@ real hardware.
 | Main userspace ABI | Built | glibc 2.44 |
 | Init system | Running | Hearth service supervisor as PID 1 |
 | Package manager | Tested | Kiln packages with dependency and path-safety checks |
-| Graphics | Built | DRM, Mesa Softpipe, Wayland, libinput, seatd, wlroots |
+| Graphics | Accelerated | Mesa 26: virgl, radeonsi/RADV (ACO), nouveau, zink; Intel later |
 | Text and UI | Built | FreeType, Fontconfig, HarfBuzz, FriBidi, Cairo, Pango |
 | Window manager | Running | Labwc 0.9.1 on virtio-vga in QEMU |
 | Desktop assets | Packaged | Current GNOME backgrounds plus Aqua, Curves, and Sunset |
-| GNOME desktop | Usable preview | Shell 50.6, core apps, polkit and desktop daemons run in QEMU; portals remain |
+| GNOME desktop | Usable preview | Shell 50.6, Console, Files, Text Editor, NetworkManager, PipeWire; Settings and portals remain |
 | Install and login | Working in QEMU | Graphical installer (GPT, EFI stub, ext4), greetd login screen, persistent home |
 
 Meldra is a developer preview, not yet an installable daily-driver OS. Audio,

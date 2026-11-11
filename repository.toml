@@ -825,3 +825,237 @@ name = "fastfetch"
 version = "2.71.0"
 status = "built"
 dependencies = ["glibc", "wayland", "libdrm", "dbus", "glib"]
+
+[[package]]
+name = "appstream"
+version = "1.2.1"
+status = "built"
+dependencies = ["glibc", "glib", "libxml2", "libfyaml", "curl", "wayland", "libxmlb"]
+
+[[package]]
+name = "curl"
+version = "8.23.0"
+status = "built"
+dependencies = ["glibc", "openssl", "zlib"]
+
+[[package]]
+name = "editorconfig"
+version = "0.12.11"
+status = "built"
+dependencies = ["glibc", "pcre2"]
+
+[[package]]
+name = "elfutils"
+version = "0.195"
+status = "built"
+dependencies = ["glibc", "zlib", "gcc-runtime"]
+
+[[package]]
+name = "exiv2"
+version = "0.28.9"
+status = "built"
+dependencies = ["glibc", "expat", "zlib", "gcc-runtime"]
+
+[[package]]
+name = "gexiv2"
+version = "0.16.2"
+status = "built"
+dependencies = ["glibc", "glib", "exiv2", "gcc-runtime"]
+
+[[package]]
+name = "gnome-autoar"
+version = "0.4.5"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "libarchive"]
+
+[[package]]
+name = "gnome-console"
+version = "50.0"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "vte", "libadwaita", "gsettings-desktop-schemas", "libgtop"]
+
+[[package]]
+name = "gnome-text-editor"
+version = "50.1"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "gtksourceview", "libadwaita", "libspelling", "gsettings-desktop-schemas", "editorconfig"]
+
+[[package]]
+name = "gst-plugins-base"
+version = "1.28.9"
+status = "built"
+dependencies = ["glibc", "glib", "gstreamer", "zlib"]
+
+[[package]]
+name = "gstreamer"
+version = "1.28.9"
+status = "built"
+dependencies = ["glibc", "glib"]
+
+[[package]]
+name = "gtk3"
+version = "3.24.43"
+status = "built"
+dependencies = ["glibc", "glib", "pango", "cairo", "harfbuzz", "fribidi", "fontconfig", "freetype", "gdk-pixbuf", "libepoxy", "libxkbcommon", "wayland", "wayland-protocols", "at-spi2-core", "mesa", "libdrm"]
+
+[[package]]
+name = "gtksourceview"
+version = "5.20.0"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "fribidi", "libxml2", "pcre2", "fontconfig", "pango"]
+
+[[package]]
+name = "kmod"
+version = "34"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libadwaita"
+version = "1.9.4"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "fribidi", "appstream"]
+
+[[package]]
+name = "libarchive"
+version = "3.8.11"
+status = "built"
+dependencies = ["glibc", "zlib", "xz", "expat"]
+
+[[package]]
+name = "libfyaml"
+version = "0.9.6"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libgtop"
+version = "2.41.3"
+status = "built"
+dependencies = ["glibc", "glib"]
+
+[[package]]
+name = "libndp"
+version = "1.9"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libnl"
+version = "3.12.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "libnma"
+version = "1.10.6"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "gtk3", "networkmanager"]
+
+[[package]]
+name = "libportal"
+version = "0.11.0"
+status = "built"
+dependencies = ["glibc", "glib", "gtk"]
+
+[[package]]
+name = "libspelling"
+version = "0.4.11"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "gtksourceview"]
+
+[[package]]
+name = "libxmlb"
+version = "0.3.30"
+status = "built"
+dependencies = ["glibc", "glib", "xz"]
+
+[[package]]
+name = "linux-firmware"
+version = "20261019"
+status = "built"
+dependencies = []
+
+[[package]]
+name = "lua"
+version = "5.4.9"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "lz4"
+version = "1.10.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "nautilus"
+version = "50.4"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "libadwaita", "gnome-desktop", "gnome-autoar", "tinysparql", "gexiv2", "glycin", "libportal", "gst-plugins-base", "icu", "wayland", "gsettings-desktop-schemas"]
+
+[[package]]
+name = "networkmanager"
+version = "1.58.1"
+status = "built"
+dependencies = ["glibc", "glib", "dbus", "eudev", "util-linux", "libndp", "elogind", "polkit", "nss", "readline", "wpa-supplicant"]
+
+[[package]]
+name = "openssl"
+version = "3.5.9"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "pipewire"
+version = "1.6.11"
+status = "built"
+dependencies = ["glibc", "glib", "dbus", "alsa-lib", "eudev", "elogind", "libsndfile", "readline", "ncurses"]
+
+[[package]]
+name = "tinysparql"
+version = "3.11.1"
+status = "built"
+dependencies = ["glibc", "glib", "json-glib", "sqlite", "libxml2", "icu", "dbus", "libsoup"]
+
+[[package]]
+name = "vte"
+version = "0.84.1"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "pango", "cairo", "fribidi", "icu", "pcre2", "lz4", "gcc-runtime"]
+
+[[package]]
+name = "vulkan-headers"
+version = "1.4.360"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "vulkan-loader"
+version = "1.4.360"
+status = "built"
+dependencies = ["glibc", "vulkan-headers", "wayland", "libffi"]
+
+[[package]]
+name = "wireless-regdb"
+version = "2026.09.03"
+status = "built"
+dependencies = []
+
+[[package]]
+name = "wireplumber"
+version = "0.5.19"
+status = "built"
+dependencies = ["glibc", "glib", "pipewire", "lua", "elogind"]
+
+[[package]]
+name = "wpa-supplicant"
+version = "2.11"
+status = "built"
+dependencies = ["glibc", "libnl", "openssl", "dbus"]
+
+[[package]]
+name = "xz"
+version = "5.8.4"
+status = "built"
+dependencies = ["glibc"]

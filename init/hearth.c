@@ -162,7 +162,8 @@ int main(int argc, char **argv) {
     }
     stop_services(services, count);
     sync();
-    int command = shutdown_requested == SIGUSR1 ? RB_POWER_OFF : RB_AUTOBOOT;
+    // busybox's halt sends SIGUSR1 and poweroff SIGUSR2 (both power the machine off); reboot sends SIGTERM.
+    int command = (shutdown_requested == SIGUSR1 || shutdown_requested == SIGUSR2) ? RB_POWER_OFF : RB_AUTOBOOT;
     reboot(command);
     return 0;
 }

@@ -1,0 +1,2 @@
+command=while [ ! -S /run/dbus/system_bus_socket ]; do /bin/sleep 0.2; done; /bin/mkdir -p /var/lib/NetworkManager /run/NetworkManager; exec /usr/sbin/NetworkManager --no-daemon
+respawn=yes

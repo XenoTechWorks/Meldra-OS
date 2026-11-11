@@ -109,7 +109,13 @@ def introspection_cross_file(original):
         text = text.replace("pkg_config_libdir = [", f"pkg_config_libdir = ['{shim}', ", 1)
         path.write_text(text, encoding="utf-8")
         # Search only the target's .gir files, never the host's (they are a different glib).
-        os.environ["XDG_DATA_DIRS"] = f"{root}/usr/share"
+        # The build machine's MIME database stays visible through a directory that holds nothing else: tools
+        # such as glib-compile-resources identify images by MIME type (GTK 3's theme PNGs failed without it).
+        mime_only = work / "host-mime"
+        mime_only.mkdir(exist_ok=True)
+        if not (mime_only / "mime").exists() and Path("/usr/share/mime").is_dir():
+            (mime_only / "mime").symlink_to("/usr/share/mime")
+        os.environ["XDG_DATA_DIRS"] = f"{root}/usr/share:{mime_only}"
         os.environ["GI_TYPELIB_PATH"] = f"{root}/usr/lib/girepository-1.0:{root}/usr/lib64/girepository-1.0"
         os.environ["GI_GIR_PATH"] = f"{root}/usr/share/gir-1.0"
         os.environ["GI_CROSS_LAUNCHER"] = (
@@ -133,10 +139,12 @@ def meson_data_build(pkg: Package, lock: dict, cache: Path, work: Path, output: 
         sysroot = desktop.make_sysroot(output, unit, pkg.deps)
         cross = desktop.cross_file(unit, sysroot)
         build_dir, stage = unit / "build", unit / "package/root"
-        subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), "--prefix=/usr",
+        subprocess.run([*desktop.MESON, "setup", "--wrap-mode=nodownload", str(build_dir), str(upstream), "--prefix=/usr",
                         "--cross-file", str(cross), *pkg.options], check=True)
         subprocess.run([*desktop.MESON, "compile", "-C", str(build_dir)], check=True)
         subprocess.run([*desktop.MESON, "install", "-C", str(build_dir), "--destdir", str(stage)], check=True)
+        if pkg.post:
+            pkg.post(stage, upstream, build_dir)
         if not (stage / pkg.pattern).exists():
             raise RuntimeError(f"{pkg.name}: expected file not installed: {pkg.pattern}")
         build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
@@ -172,6 +180,8 @@ def cross_autotools_build(pkg: Package, lock: dict, cache: Path, work: Path, out
     root = sysroot.resolve()
     build_dir, stage = unit / "build", unit / "package/root"
     build_dir.mkdir()
+    if not (upstream / "configure").exists():   # git tag archives ship configure.ac only
+        subprocess.run(["autoreconf", "-fi"], cwd=upstream, check=True)
     env = {**os.environ, "CC": f"gcc --sysroot={root}", "CFLAGS": "-O2 -pipe",
            "LDFLAGS": f"-Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
            "PKG_CONFIG_SYSROOT_DIR": str(root),
@@ -217,6 +227,31 @@ def ncurses_post(stage: Path, upstream: Path, build_dir: Path) -> None:
     for alias in ("ncurses.pc", "tinfo.pc"):
         if (pc / "ncursesw.pc").exists() and not (pc / alias).exists():
             (pc / alias).symlink_to("ncursesw.pc")
+
+
+def libgtop_post(stage: Path, upstream: Path, build_dir: Path) -> None:
+    """libgtop installs libgtop_server2 setuid; on Linux the library reads /proc itself and the server is only
+    for other systems, so it ships without the setuid bit (Kiln's allowlist would reject it anyway)."""
+    del upstream, build_dir
+    for helper in stage.rglob("libgtop_server*"):
+        helper.chmod(0o755)
+
+
+def nautilus_post(stage: Path, upstream: Path, build_dir: Path) -> None:
+    """Nautilus reads two localsearch preferences even when the optional file indexer is not installed."""
+    del upstream, build_dir
+    schemas = stage / "usr/share/glib-2.0/schemas"
+    schemas.mkdir(parents=True, exist_ok=True)
+    (schemas / "org.meldra.Tracker3.Miner.Files.gschema.xml").write_text(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<schemalist>\n"
+        "  <schema id=\"org.freedesktop.Tracker3.Miner.Files\" "
+        "path=\"/org/freedesktop/tracker/miner/files/\">\n"
+        "    <key name=\"index-recursive-directories\" type=\"as\"><default>[ '$HOME' ]</default></key>\n"
+        "    <key name=\"index-single-directories\" type=\"as\"><default>[]</default></key>\n"
+        "  </schema>\n"
+        "</schemalist>\n"
+    )
 
 
 def bash_post(stage: Path, upstream: Path, build_dir: Path) -> None:
@@ -563,7 +598,7 @@ def gnome_shell_build(pkg: Package, lock: dict, cache: Path, work: Path, output:
     try:
         cross = desktop.cross_file(unit, sysroot)
         build_dir, stage = unit / "build", unit / "package/root"
-        subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), "--prefix=/usr",
+        subprocess.run([*desktop.MESON, "setup", "--wrap-mode=nodownload", str(build_dir), str(upstream), "--prefix=/usr",
                         "--sysconfdir=/etc", "--cross-file", str(cross), *pkg.options], check=True)
         subprocess.run([*desktop.MESON, "compile", "-C", str(build_dir)], check=True)
         subprocess.run([*desktop.MESON, "install", "-C", str(build_dir), "--destdir", str(stage)], check=True)
@@ -647,6 +682,9 @@ def session_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Pat
     start = stage / "usr/libexec/meldra/start-gnome"
     shutil.copy2("init/start-gnome.sh", start)
     start.chmod(0o755)
+    inner = stage / "usr/libexec/meldra/gnome-session-inner"
+    shutil.copy2("init/gnome-session-inner.sh", inner)
+    inner.chmod(0o755)
     for script in ("network-up", "udhcpc-script"):
         target = stage / "usr/libexec/meldra" / script
         shutil.copy2(f"init/network/{script}.sh", target)
@@ -677,6 +715,225 @@ def greetd_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path
         shutil.copy2(built / binary, stage / target)
         subprocess.run(["strip", "--strip-unneeded", str(stage / target)], check=True)
         require_glibc_elf(stage / target)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def lz4_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """lz4: plain Makefiles; only the library is built and shipped."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    stage = unit / "package/root"
+    common = [f"CC=gcc --sysroot={sysroot.resolve()}", "CFLAGS=-O2 -pipe", "PREFIX=/usr", "LIBDIR=/usr/lib"]
+    subprocess.run(["make", "-C", "lib", *common, "lib"], cwd=upstream, check=True)
+    subprocess.run(["make", "-C", "lib", *common, f"DESTDIR={stage}", "install"], cwd=upstream, check=True)
+    for archive in (stage / "usr/lib").glob("*.a"):
+        archive.unlink()
+    require_glibc_elf(next((stage / "usr/lib").glob("liblz4.so.1.*")))
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+FIRMWARE_SELECTION = (
+    # GPUs
+    "amdgpu/", "radeon/", "i915/", "xe/",
+    # Wi-Fi and Bluetooth-combo chips
+    "iwlwifi-", "intel/iwlwifi/", "rtw88/", "rtw89/", "mediatek/", "ath9k_htc/", "ath10k/", "ath11k/", "ath12k/",
+    "brcm/", "cypress/", "rtlwifi/",
+    # Wired network chips
+    "rtl_nic/",
+    # Wi-Fi regulatory database (cfg80211 reads it to know which channels are allowed)
+    "regulatory.db", "regulatory.db.p7s",
+)
+
+
+def linux_firmware_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """A selection of linux-firmware (GPU, Wi-Fi, network) in /lib/firmware, where the kernel looks.
+
+    Symlinks the upstream install script would create ("Link:" lines in WHENCE) are made too. NVIDIA GSP
+    firmware is left out for now (large; only needed by nouveau on RTX 20 and newer)."""
+    import tarfile
+    archive = cache / lock.get("file", Path(lock["url"]).name)
+    import hashlib
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != lock["sha256"]:
+        raise RuntimeError("linux-firmware archive does not match its pin")
+    unit_root = work / pkg.name
+    stage = unit_root / "package/root"
+    firmware = stage / "lib/firmware"
+    firmware.mkdir(parents=True)
+    top = f"linux-firmware-{lock['version']}/"
+    whence = ""
+    with tarfile.open(archive) as bundle:
+        for member in bundle:
+            if not member.name.startswith(top):
+                continue
+            relative = member.name[len(top):]
+            if relative in ("WHENCE",) or relative.startswith("LICEN"):
+                data = bundle.extractfile(member).read() if member.isfile() else b""
+                if relative == "WHENCE":
+                    whence = data.decode(errors="replace")
+                if relative.startswith("LICEN") and member.isfile():
+                    (firmware / relative).parent.mkdir(parents=True, exist_ok=True)
+                    (firmware / relative).write_bytes(data)
+                continue
+            if not relative.startswith(FIRMWARE_SELECTION) or not member.isfile():
+                continue
+            target = firmware / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(bundle.extractfile(member).read())
+    links = 0
+    for line in whence.splitlines():
+        if line.startswith("Link:"):
+            link, _, points_to = line[5:].strip().partition(" -> ")
+            if link.startswith(FIRMWARE_SELECTION) and (firmware / Path(link).parent / points_to).exists():
+                (firmware / link).parent.mkdir(parents=True, exist_ok=True)
+                (firmware / link).unlink(missing_ok=True)
+                (firmware / link).symlink_to(points_to)
+                links += 1
+    (firmware / "WHENCE").write_text(whence)
+    # Intel Wi-Fi ships every firmware API version for every chip; the driver uses the newest one it supports,
+    # so the newest three per chip cover this kernel and the next few.
+    import re as _re
+    versions: dict[tuple[Path, str], list[tuple[int, Path]]] = {}
+    for path in firmware.rglob("iwlwifi-*.ucode"):
+        match = _re.fullmatch(r"(iwlwifi-.+)-(\d+)\.ucode", path.name)
+        if match and not path.is_symlink():
+            versions.setdefault((path.parent, match.group(1)), []).append((int(match.group(2)), path))
+    dropped = 0
+    for found in versions.values():
+        for _, path in sorted(found, reverse=True)[3:]:
+            path.unlink()
+            dropped += 1
+    for path in list(firmware.rglob("*")):           # links whose target was dropped
+        if path.is_symlink() and not path.exists():
+            path.unlink()
+    # The kernel loads <name>.xz (CRC32-checked) when <name> is absent: compress everything but the notices.
+    compressed = 0
+    for path in sorted(firmware.rglob("*")):
+        if path.is_file() and not path.is_symlink() and path.name not in ("WHENCE",) and \
+                not path.relative_to(firmware).parts[0].startswith("LICEN"):
+            subprocess.run(["xz", "--check=crc32", "-9", "--threads=1", str(path)], check=True)
+            compressed += 1
+    for path in sorted(firmware.rglob("*")):
+        if path.is_symlink():
+            target = os.readlink(path)
+            path.unlink()
+            path.with_name(path.name + ".xz").symlink_to(target + ".xz")
+    size = sum(f.stat().st_size for f in firmware.rglob("*") if f.is_file())
+    print(f"linux-firmware: {size / 1e6:.0f} MB after trimming {dropped} old Intel Wi-Fi versions and "
+          f"compressing {compressed} files; {links} links")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def wireless_regdb_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Install cfg80211's signed regulatory database, which is released separately from linux-firmware."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    stage = unit / "package/root"
+    firmware = stage / "lib/firmware"
+    firmware.mkdir(parents=True)
+    for name in ("regulatory.db", "regulatory.db.p7s"):
+        shutil.copy2(upstream / name, firmware / name)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def openssl_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    stage = unit / "package/root"
+    env = {**os.environ, "CC": f"gcc --sysroot={sysroot.resolve()}", "CFLAGS": "-O2 -pipe"}
+    subprocess.run(["./Configure", "linux-x86_64", "--prefix=/usr", "--libdir=lib", "--openssldir=/etc/ssl",
+                    "shared", "no-tests", "no-docs", "no-static-engine"], cwd=upstream, env=env, check=True)
+    subprocess.run(["make", f"-j{os.environ.get('MELDRA_JOBS', '2')}"], cwd=upstream, env=env, check=True)
+    subprocess.run(["make", f"DESTDIR={stage}", "install_sw", "install_ssldirs"], cwd=upstream, env=env, check=True)
+    for archive in (stage / "usr/lib").glob("*.a"):
+        archive.unlink()
+    require_glibc_elf(stage / "usr/lib/libssl.so.3")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+WPA_SUPPLICANT_CONFIG = """
+CONFIG_DRIVER_NL80211=y
+CONFIG_LIBNL32=y
+CONFIG_CTRL_IFACE=y
+CONFIG_CTRL_IFACE_DBUS_NEW=y
+CONFIG_CTRL_IFACE_DBUS_INTRO=y
+CONFIG_TLS=openssl
+CONFIG_IEEE8021X_EAPOL=y
+CONFIG_EAP_MD5=y
+CONFIG_EAP_MSCHAPV2=y
+CONFIG_EAP_TLS=y
+CONFIG_EAP_PEAP=y
+CONFIG_EAP_TTLS=y
+CONFIG_EAP_GTC=y
+CONFIG_PKCS12=y
+CONFIG_SAE=y
+CONFIG_OWE=y
+CONFIG_IEEE80211W=y
+CONFIG_IEEE80211R=y
+CONFIG_IEEE80211N=y
+CONFIG_IEEE80211AC=y
+CONFIG_IEEE80211AX=y
+CONFIG_AP=y
+CONFIG_BGSCAN_SIMPLE=y
+CONFIG_BACKEND=file
+CONFIG_ELOOP=eloop
+CONFIG_L2_PACKET=linux
+CONFIG_DEBUG_SYSLOG=y
+"""
+
+
+def wpa_supplicant_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    tree = upstream / "wpa_supplicant"
+    (tree / ".config").write_text(WPA_SUPPLICANT_CONFIG)
+    env = {**os.environ, "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"}
+    common = [f"CC=gcc --sysroot={root}", "BINDIR=/usr/sbin", "LIBDIR=/usr/lib"]
+    subprocess.run(["make", *common, f"-j{os.environ.get('MELDRA_JOBS', '2')}"], cwd=tree, env=env, check=True)
+    subprocess.run(["make", *common, f"DESTDIR={stage}", "install"], cwd=tree, env=env, check=True)
+    dbus = stage / "usr/share/dbus-1"
+    (dbus / "system.d").mkdir(parents=True)
+    (dbus / "system-services").mkdir(parents=True)
+    shutil.copy2(tree / "dbus/dbus-wpa_supplicant.conf", dbus / "system.d/wpa_supplicant.conf")
+    service = (tree / "dbus/fi.w1.wpa_supplicant1.service.in").read_text().replace("@BINDIR@", "/usr/sbin")
+    # Hearth has no systemd: drop SystemdService= so D-Bus starts the daemon itself.
+    service = "\n".join(l for l in service.splitlines() if not l.startswith("SystemdService")) + "\n"
+    (dbus / "system-services/fi.w1.wpa_supplicant1.service").write_text(service)
+    require_glibc_elf(stage / "usr/sbin/wpa_supplicant")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def lua_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Lua 5.4 as a static library plus headers and a pkg-config file (WirePlumber links it in)."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    stage = unit / "package/root"
+    subprocess.run(["make", "-C", "src", f"CC=gcc --sysroot={sysroot.resolve()} -std=gnu99",
+                    "MYCFLAGS=-fPIC -DLUA_USE_LINUX", "MYLIBS=", "liblua.a"], cwd=upstream, check=True)
+    include = stage / "usr/include/lua5.4"
+    include.mkdir(parents=True)
+    for header in ("lua.h", "luaconf.h", "lualib.h", "lauxlib.h", "lua.hpp"):
+        shutil.copy2(upstream / "src" / header, include / header)
+    lib = stage / "usr/lib"
+    lib.mkdir(parents=True)
+    shutil.copy2(upstream / "src/liblua.a", lib / "liblua5.4.a")
+    pc = lib / "pkgconfig"
+    pc.mkdir()
+    (pc / "lua5.4.pc").write_text(f"prefix=/usr\nincludedir=${{prefix}}/include/lua5.4\nlibdir=${{prefix}}/lib\n\n"
+                                  f"Name: Lua\nDescription: Lua language engine\nVersion: {lock['version']}\n"
+                                  "Libs: -L${libdir} -llua5.4 -lm\nCflags: -I${includedir}\n")
+    (pc / "lua.pc").symlink_to("lua5.4.pc")
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
@@ -833,10 +1090,14 @@ def cmake_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path)
         env=env, check=True)
     subprocess.run(["cmake", "--build", str(build_dir)], env=env, check=True)
     subprocess.run(["cmake", "--install", str(build_dir)], env={**env, "DESTDIR": str(stage)}, check=True)
-    library = next((stage / "usr/lib").glob(pkg.pattern), None)
-    if library is None:
-        raise RuntimeError(f"{pkg.name} library not installed: {pkg.pattern}")
-    require_glibc_elf(library)
+    if "/" in pkg.pattern:   # a path under the stage (header-only or data packages)
+        if not (stage / pkg.pattern).exists():
+            raise RuntimeError(f"{pkg.name}: expected file not installed: {pkg.pattern}")
+    else:
+        library = next((stage / "usr/lib").glob(pkg.pattern), None)
+        if library is None:
+            raise RuntimeError(f"{pkg.name} library not installed: {pkg.pattern}")
+        require_glibc_elf(library)
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
@@ -880,7 +1141,7 @@ def rtkit_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path)
     sysroot = desktop.make_sysroot(output, unit, pkg.deps)
     cross = desktop.cross_file(unit, sysroot)
     build_dir, stage = unit / "build", unit / "package/root"
-    subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), "--prefix=/usr",
+    subprocess.run([*desktop.MESON, "setup", "--wrap-mode=nodownload", str(build_dir), str(upstream), "--prefix=/usr",
                     "--cross-file", str(cross), *pkg.options], check=True)
     subprocess.run([*desktop.MESON, "compile", "-C", str(build_dir)], check=True)
     subprocess.run([*desktop.MESON, "install", "-C", str(build_dir), "--destdir", str(stage)], check=True)
@@ -1100,10 +1361,10 @@ PACKAGES = [
     ),
     Package(
         "glycin", ("glibc", "glib", "libffi", "pcre2", "zlib", "libseccomp", "lcms2", "fontconfig", "freetype",
-                   "expat", "libpng"),
+                   "expat", "libpng", "gtk"),
         introspect=True, rust=True,
         options=("-Dglycin-loaders=true", "-Dloaders=glycin-image-rs", "-Dlibglycin=true",
-                 "-Dlibglycin-gtk4=false", "-Dintrospection=true", "-Dvapi=false", "-Dtests=false",
+                 "-Dlibglycin-gtk4=true", "-Dintrospection=true", "-Dvapi=false", "-Dtests=false",
                  "-Dglycin-thumbnailer=false", "-Dcapi_docs=false", "-Dlto=false"),
         pattern="libglycin-2.so.0",
     ),
@@ -1137,9 +1398,9 @@ PACKAGES = [
                 "at-spi2-core", "dbus", "colord", "lcms2", "sqlite", "libgusb", "libusb", "json-glib", "libei",
                 "libdisplay-info", "libdrm", "gnome-desktop", "gdk-pixbuf", "gtk", "libgudev", "eudev", "wayland",
                 "wayland-protocols", "libinput", "libevdev", "mtdev", "mesa", "glycin", "libseccomp", "elogind",
-                "libcap", "util-linux", "libepoxy", "libtiff", "libjpeg-turbo", "iso-codes", "xkeyboard-config", "mutter", "gjs", "mozjs", "gcc-runtime", "polkit", "gcr", "evolution-data-server", "icu", "nss", "nspr", "libical", "libsecret", "libsoup", "libpsl", "nghttp2", "p11-kit", "libgcrypt", "libgpg-error", "libtasn1", "duktape", "pulseaudio", "libsndfile"),
+                "libcap", "util-linux", "libepoxy", "libtiff", "libjpeg-turbo", "iso-codes", "xkeyboard-config", "mutter", "gjs", "mozjs", "gcc-runtime", "polkit", "gcr", "evolution-data-server", "icu", "nss", "nspr", "libical", "libsecret", "libsoup", "libpsl", "nghttp2", "p11-kit", "libgcrypt", "libgpg-error", "libtasn1", "duktape", "pulseaudio", "libsndfile", "networkmanager", "libnma"),
         introspect=True, kind="custom",
-        options=("-Dnetworkmanager=false", "-Dsystemd=false", "-Dcamera_monitor=false", "-Dportal_helper=false",
+        options=("-Dnetworkmanager=true", "-Dsystemd=false", "-Dcamera_monitor=false", "-Dportal_helper=false",
                  "-Dextensions_tool=false", "-Dextensions_app=false", "-Dgtk_doc=false", "-Dman=false",
                  "-Dtests=false"),
         pattern="usr/bin/gnome-shell",
@@ -1328,6 +1589,238 @@ PACKAGES = [
         "dosfstools", ("glibc",), kind="cross-autotools", options=("--enable-compat-symlinks", "--sbindir=/usr/sbin"),
         pattern="usr/sbin/mkfs.fat",
     ),
+    # --- GPU acceleration ---
+    Package(
+        # Rebuilt with the AMD, Radeon and Nouveau helper libraries Mesa's hardware drivers need.
+        "libdrm", ("glibc",),
+        options=("-Damdgpu=enabled", "-Dradeon=enabled", "-Dnouveau=enabled", "-Dintel=disabled",
+                 "-Dvmwgfx=enabled", "-Dtests=false", "-Dman-pages=disabled", "-Dvalgrind=disabled",
+                 "-Dcairo-tests=disabled"),
+        pattern="libdrm.so.2*",
+    ),
+    Package(
+        "elfutils", ("glibc", "zlib", "gcc-runtime"), kind="cross-autotools",
+        options=("--disable-debuginfod", "--disable-libdebuginfod", "--disable-nls", "--program-prefix=eu-",
+                 "--libdir=/usr/lib", "--without-bzlib", "--without-lzma", "--without-zstd"),
+        pattern="usr/lib/libelf.so.1",
+    ),
+    Package("vulkan-headers", ("glibc",), kind="cmake", options=("-DVULKAN_HEADERS_ENABLE_TESTS=OFF",),
+            pattern="usr/include/vulkan/vulkan.h"),
+    Package(
+        "vulkan-loader", ("glibc", "vulkan-headers", "wayland", "libffi"), kind="cmake",
+        options=("-DBUILD_TESTS=OFF", "-DBUILD_WSI_XCB_SUPPORT=OFF", "-DBUILD_WSI_XLIB_SUPPORT=OFF",
+                 "-DBUILD_WSI_WAYLAND_SUPPORT=ON", "-DBUILD_WSI_DIRECTFB_SUPPORT=OFF", "-DSYSCONFDIR=/etc"),
+        pattern="libvulkan.so.1*",
+    ),
+    Package(
+        "mesa", ("glibc", "libdrm", "libffi", "expat", "wayland", "wayland-protocols", "zlib", "elfutils",
+                 "vulkan-loader", "vulkan-headers", "gcc-runtime"),
+        options=("-Dplatforms=wayland", "-Dgallium-drivers=softpipe,virgl,radeonsi,zink,nouveau",
+                 # Intel (iris, anv) needs mesa-clc, i.e. LLVM and clang at build time: a later step.
+                 "-Dvulkan-drivers=amd,virtio", "-Dglx=disabled", "-Degl=enabled", "-Dgbm=enabled",
+                 "-Dgles1=disabled", "-Dgles2=enabled", "-Dopengl=true", "-Dglvnd=disabled",
+                 # No LLVM: AMD shaders compile with Mesa's own ACO.
+                 "-Dllvm=disabled", "-Dshared-llvm=disabled", "-Damd-use-llvm=false", "-Ddraw-use-llvm=false",
+                 "-Dlibunwind=disabled", "-Dzstd=disabled", "-Dshader-cache=enabled", "-Dvalgrind=disabled",
+                 "-Dbuild-tests=false", "-Dgallium-va=disabled", "-Dvideo-codecs=[]", "-Dintel-rt=disabled",
+                 "-Dgallium-rusticl=false", "-Dteflon=false", "-Dmicrosoft-clc=disabled", "-Dvulkan-layers=[]",
+                 "-Dtools=[]", "-Dsysconfdir=/etc"),
+        pattern="libgallium-*.so",
+    ),
+    Package(
+        "kmod", ("glibc",),
+        options=("-Dmanpages=false", "-Ddocs=false", "-Dzstd=disabled", "-Dxz=disabled", "-Dzlib=disabled",
+                 "-Dopenssl=disabled", "-Dtools=true", "-Dbuild-tests=false", "-Dbashcompletiondir=no",
+                 "-Dfishcompletiondir=no", "-Dzshcompletiondir=no", "--sbindir=/usr/sbin",
+                 # The linux-modules package installs to /usr/lib/modules.
+                 "-Dmoduledir=/usr/lib/modules"),
+        pattern="libkmod.so.2*",
+    ),
+    # --- Drivers, firmware, Wi-Fi, audio ---
+    Package("linux-firmware", (), kind="custom"),
+    Package("wireless-regdb", (), kind="custom"),
+    Package(
+        # Rebuilt with kmod so it loads drivers (Wi-Fi, AMD GPU, audio) for the hardware it finds, and with blkid.
+        "eudev", ("glibc", "kmod", "util-linux"), kind="cross-autotools",
+        options=("--disable-static", "--enable-shared", "--enable-blkid", "--disable-selinux", "--enable-kmod",
+                 "--disable-manpages", "--disable-systemd-hwdb", "--disable-mtd_probe", "--disable-tpm2",
+                 "--with-rootprefix=/usr", "--with-rootlibdir=/usr/lib", "--with-rootlibexecdir=/usr/lib/udev",
+                 "--sysconfdir=/etc"),
+        pattern="usr/bin/udevadm",
+    ),
+    Package("openssl", ("glibc",), kind="custom"),
+    Package("libnl", ("glibc",), kind="cross-autotools",
+            options=("--disable-static", "--sysconfdir=/etc", "--libdir=/usr/lib", "--disable-cli"),
+            pattern="usr/lib/libnl-3.so.200"),
+    Package("wpa-supplicant", ("glibc", "libnl", "openssl", "dbus"), kind="custom"),
+    Package("libndp", ("glibc",), kind="cross-autotools", options=("--disable-static", "--libdir=/usr/lib"),
+            pattern="usr/lib/libndp.so.0"),
+    Package(
+        "networkmanager", ("glibc", "glib", "dbus", "eudev", "util-linux", "libndp", "elogind", "polkit", "nss",
+                           "readline", "wpa-supplicant"),
+        introspect=True,
+        options=("-Dsystemd_journal=false", "-Dsession_tracking=elogind", "-Dsession_tracking_consolekit=false",
+                 "-Dsuspend_resume=elogind", "-Dpolkit=true", "-Dselinux=false", "-Dlibaudit=no", "-Dwext=false",
+                 "-Dwifi=true", "-Diwd=false", "-Dppp=false", "-Dmodem_manager=false", "-Dofono=false",
+                 "-Dconcheck=false", "-Dteamdctl=false", "-Dovs=false", "-Dnmcli=true", "-Dnmtui=false",
+                 "-Dnm_cloud_setup=false", "-Debpf=false", "-Dnbft=false", "-Dclat=false", "-Dintrospection=true",
+                 "-Dvapi=false", "-Ddocs=false", "-Dman=false", "-Dtests=no", "-Dfirewalld_zone=false",
+                 "-Dlibpsl=false", "-Dcrypto=nss", "-Dqt=false", "-Dreadline=libreadline",
+                 "-Dudev_dir=/usr/lib/udev", "-Ddbus_conf_dir=/usr/share/dbus-1/system.d",
+                 "-Dsystemdsystemunitdir=no", "-Dsystemdsystemgeneratordir=no", "-Dconfig_dns_rc_manager_default=file", "-Dconfig_dhcp_default=internal",
+                 "-Dconfig_wifi_backend_default=wpa_supplicant", "-Dmodprobe=/usr/sbin/modprobe",
+                 "-Dkernel_firmware_dir=/lib/firmware", "--sysconfdir=/etc", "--localstatedir=/var"),
+        pattern="libnm.so.0*",
+    ),
+    Package(
+        "gtk3", ("glibc", "glib", "pango", "cairo", "harfbuzz", "fribidi", "fontconfig", "freetype", "gdk-pixbuf",
+                 "libepoxy", "libxkbcommon", "wayland", "wayland-protocols", "at-spi2-core", "mesa", "libdrm"),
+        introspect=True,
+        options=("-Dx11_backend=false", "-Dwayland_backend=true", "-Dbroadway_backend=false", "-Dprint_backends=file",
+                 "-Dcolord=no", "-Dgtk_doc=false", "-Dman=false", "-Dintrospection=true", "-Ddemos=false",
+                 "-Dexamples=false", "-Dtests=false", "-Dinstalled_tests=false", "-Dcloudproviders=false",
+                 "-Dtracker3=false", "-Dprofiler=false"),
+        pattern="libgtk-3.so.0*",
+    ),
+    Package(
+        "libnma", ("glibc", "glib", "gtk", "gtk3", "networkmanager"), introspect=True,
+        options=("-Dlibnma_gtk4=true", "-Dgcr=false", "-Diso_codes=false", "-Dmobile_broadband_provider_info=false",
+                 "-Dgtk_doc=false", "-Dintrospection=true", "-Dvapi=false"),
+        pattern="libnma-gtk4.so.0*",
+    ),
+    Package("lua", ("glibc",), kind="custom"),
+    Package(
+        "pipewire", ("glibc", "glib", "dbus", "alsa-lib", "eudev", "elogind", "libsndfile", "readline", "ncurses"),
+        options=("-Dsession-managers=[]", "-Dlibsystemd=disabled", "-Dsystemd-system-service=disabled",
+                 "-Dsystemd-user-service=disabled", "-Dlogind=enabled", "-Dlogind-provider=libelogind",
+                 "-Dpipewire-alsa=enabled", "-Dpipewire-jack=disabled", "-Dpipewire-v4l2=disabled", "-Djack=disabled",
+                 "-Dbluez5=disabled", "-Dlibcamera=disabled", "-Dvulkan=disabled", "-Dx11=disabled",
+                 "-Dx11-xfixes=disabled", "-Dlibpulse=disabled", "-Droc=disabled", "-Davahi=disabled",
+                 "-Decho-cancel-webrtc=disabled", "-Dlibusb=disabled", "-Draop=disabled", "-Dlv2=disabled",
+                 "-Dgstreamer=disabled", "-Dexamples=disabled", "-Dtests=disabled", "-Dman=disabled",
+                 "-Ddocs=disabled", "-Dsdl2=disabled", "-Dlibffado=disabled", "-Dopus=disabled",
+                 "-Dflatpak=disabled", "-Dselinux=disabled", "-Dlibmysofa=disabled", "-Dsnap=disabled",
+                 "-Dlibcanberra=disabled", "-Dsndfile=enabled", "-Dreadline=enabled", "-Ddbus=enabled",
+                 "-Dalsa=enabled", "-Dudev=enabled", "-Dgsettings=disabled", "-Debur128=disabled",
+                 "-Dbluez5-codec-lc3=disabled", "-Dcompress-offload=disabled", "-Dlegacy-rtkit=false",
+                 "--sysconfdir=/etc"),
+        pattern="libpipewire-0.3.so.0*",
+    ),
+    Package(
+        "wireplumber", ("glibc", "glib", "pipewire", "lua", "elogind"),
+        options=("-Dsystem-lua=true", "-Dsystem-lua-version=5.4", "-Dsystemd=disabled",
+                 "-Dsystemd-system-service=false", "-Dsystemd-user-service=false", "-Ddoc=disabled",
+                 "-Dintrospection=disabled", "-Dtests=false", "-Delogind=enabled", "-Dmodules=true",
+                 "-Ddaemon=true", "-Dtools=true", "--sysconfdir=/etc"),
+        pattern="libwireplumber-0.5.so.0*",
+    ),
+    # --- Real apps: GNOME Console, Text Editor ---
+    Package("lz4", ("glibc",), kind="custom"),
+    Package("libfyaml", ("glibc",), kind="cross-autotools", options=("--disable-static", "--libdir=/usr/lib"),
+            pattern="usr/lib/libfyaml.so.0"),
+    Package("curl", ("glibc", "openssl", "zlib"), kind="cross-autotools",
+            options=("--disable-static", "--with-openssl", "--with-ca-path=/etc/ssl/certs", "--without-libpsl",
+                     "--without-brotli", "--without-zstd", "--without-libidn2", "--without-nghttp2",
+                     "--disable-ldap", "--disable-manual", "--libdir=/usr/lib"),
+            pattern="usr/lib/libcurl.so.4"),
+    Package("libxmlb", ("glibc", "glib", "xz"),
+            options=("-Dgtkdoc=false", "-Dintrospection=false", "-Dtests=false", "-Dstemmer=false", "-Dcli=false",
+                     "-Dlzma=enabled", "-Dzstd=disabled"),
+            pattern="libxmlb.so.2*"),
+    Package("appstream", ("glibc", "glib", "libxml2", "libfyaml", "curl", "wayland", "libxmlb"),
+            patches=(("data/meson.build", "5f853447bb084500e0d50ef2de7a4f0f2b56c54890ff77fce2731e6ad8d68fea",
+                      "cc220abf8375ed19b5f47a2374f9a2c4eeb4bf30c7a84337c448dfc4a61ce2f8",
+                      "if meson.is_cross_build()\n    dependency('appstream'",
+                      "if false  # Meldra: run the just-built appstreamcli through the cross exe_wrapper\n"
+                      "    dependency('appstream'",
+                      "Cross builds ask for a native appstreamcli only to add release notes to AppStream's own "
+                      "metainfo; the cross file's exe_wrapper runs the appstreamcli this build produces instead."),),
+            options=("-Dsystemd=false", "-Dstemming=false", "-Dvapi=false", "-Dqt=false", "-Dcompose=false",
+                     "-Dapt-support=false", "-Dgir=false", "-Ddocs=false", "-Dapidocs=false", "-Dinstall-docs=false",
+                     "-Dman=false", "-Dzstd-support=false", "-Dbash-completion=false", "-Dtools=true"),
+            pattern="libappstream.so.5*"),
+    Package("libadwaita", ("glibc", "glib", "gtk", "fribidi", "appstream"),
+            introspect=True,
+            options=("-Dexamples=false", "-Dtests=false", "-Dvapi=false", "-Dintrospection=enabled",
+                     "-Ddocumentation=false"),
+            pattern="libadwaita-1.so.0*"),
+    Package("gtksourceview", ("glibc", "glib", "gtk", "fribidi", "libxml2", "pcre2", "fontconfig", "pango"),
+            introspect=True,
+            options=("-Dvapi=false", "-Dbuild-testsuite=false", "-Dsysprof=false", "-Ddocumentation=false",
+                     "-Dintrospection=enabled"),
+            pattern="libgtksourceview-5.so.0*"),
+    Package("vte", ("glibc", "glib", "gtk", "pango", "cairo", "fribidi", "icu", "pcre2", "lz4", "gcc-runtime"),
+            introspect=True,
+            options=("-Dgtk3=false", "-Dgtk4=true", "-Dgnutls=false", "-D_systemd=false", "-Dvapi=false",
+                     "-Dgir=true", "-Ddocs=false", "-Dicu=true", "-Dglade=false"),
+            pattern="libvte-2.91-gtk4.so.0*"),
+    Package("libspelling", ("glibc", "glib", "gtk", "gtksourceview"), introspect=True,
+            # No enchant yet (spelling dictionaries come later); Text Editor works without it.
+            options=("-Denchant=disabled", "-Ddocs=false", "-Dsysprof=false", "-Dvapi=false",
+                     "-Dintrospection=enabled"),
+            pattern="libspelling-1.so.2*"),
+    Package("libgtop", ("glibc", "glib"), kind="cross-autotools", post=libgtop_post,
+            options=("--disable-static", "--disable-introspection", "--without-x", "--disable-gtk-doc",
+                     "--disable-nls", "--libdir=/usr/lib"),
+            pattern="usr/lib/libgtop-2.0.so.11"),
+    Package("editorconfig", ("glibc", "pcre2"), kind="cmake",
+            options=("-DBUILD_DOCUMENTATION=OFF", "-DBUILD_TESTING=OFF"),
+            pattern="libeditorconfig.so.0*"),
+    Package("gnome-console", ("glibc", "glib", "gtk", "vte", "libadwaita", "gsettings-desktop-schemas", "libgtop"),
+            kind="data", options=("-Dtests=false",), pattern="usr/bin/kgx"),
+    Package("gnome-text-editor", ("glibc", "glib", "gtk", "gtksourceview", "libadwaita", "libspelling",
+                                  "gsettings-desktop-schemas", "editorconfig"),
+            kind="data", options=("-Ddevelopment=false",), pattern="usr/bin/gnome-text-editor"),
+    # --- Real apps: GNOME Files (Nautilus) ---
+    Package("xz", ("glibc",), kind="cross-autotools",
+            options=("--disable-static", "--disable-nls", "--disable-doc", "--libdir=/usr/lib"),
+            pattern="usr/lib/liblzma.so.5"),
+    Package("libarchive", ("glibc", "zlib", "xz", "expat"), kind="cross-autotools",
+            options=("--disable-static", "--without-openssl", "--without-nettle", "--without-xml2",
+                     "--without-lz4", "--without-zstd", "--without-bz2lib", "--without-libb2", "--with-lzma",
+                     "--with-expat", "--disable-acl", "--disable-xattr", "--libdir=/usr/lib"),
+            pattern="usr/lib/libarchive.so.13"),
+    Package("exiv2", ("glibc", "expat", "zlib", "gcc-runtime"), kind="cmake",
+            options=("-DEXIV2_ENABLE_INIH=OFF", "-DEXIV2_ENABLE_BROTLI=OFF", "-DEXIV2_BUILD_SAMPLES=OFF",
+                     "-DEXIV2_BUILD_EXIV2_COMMAND=OFF", "-DEXIV2_ENABLE_NLS=OFF", "-DEXIV2_ENABLE_BMFF=ON",
+                     "-DBUILD_TESTING=OFF", "-DEXIV2_BUILD_UNIT_TESTS=OFF", "-DEXIV2_ENABLE_WEBREADY=OFF"),
+            pattern="libexiv2.so.28*"),
+    Package("gexiv2", ("glibc", "glib", "exiv2", "gcc-runtime"), introspect=True,
+            options=("-Dintrospection=true", "-Dvapi=false", "-Dpython3=false", "-Dtests=false", "-Dtools=false",
+                     "-Dgtk_doc=false"),
+            pattern="libgexiv2-0.16.so*"),
+    Package("gnome-autoar", ("glibc", "glib", "gtk", "libarchive"),
+            # The optional widget library is GTK 3-only; Nautilus uses the toolkit-independent archive API.
+            options=("-Dgtk=false", "-Dintrospection=disabled", "-Dvapi=false", "-Dtests=false", "-Dgtk_doc=false"),
+            pattern="libgnome-autoar-0.so.0*"),
+    Package("tinysparql", ("glibc", "glib", "json-glib", "sqlite", "libxml2", "icu", "dbus", "libsoup"), introspect=True,
+            options=("-Davahi=disabled", "-Dstemmer=disabled", "-Dunicode_support=icu",
+                     "-Ddocs=false", "-Dman=false", "-Dtests=false", "-Dintrospection=enabled", "-Dvapi=disabled",
+                     "-Dsystemd_user_services=false", "-Dbash_completion=false"),
+            pattern="libtinysparql-3.0.so.0*"),
+    Package("libportal", ("glibc", "glib", "gtk"),
+            options=("-Dbackend-gtk4=enabled", "-Dbackend-gtk3=disabled", "-Dbackend-qt5=disabled",
+                     "-Dbackend-qt6=disabled", "-Dintrospection=false", "-Dvapi=false", "-Ddocs=false",
+                     "-Dtests=false"),
+            pattern="libportal.so.1*"),
+    Package("gstreamer", ("glibc", "glib"),
+            options=("-Dintrospection=disabled", "-Dtests=disabled", "-Dexamples=disabled", "-Ddoc=disabled",
+                     "-Dbenchmarks=disabled", "-Dlibunwind=disabled", "-Dlibdw=disabled", "-Dbash-completion=disabled",
+                     "-Dnls=disabled", "-Dptp-helper=disabled", "-Dcheck=enabled", "-Dtools=enabled"),
+            pattern="libgstreamer-1.0.so.0*"),
+    Package("gst-plugins-base", ("glibc", "glib", "gstreamer", "zlib"),
+            # Only the libraries Files needs (pbutils, tag, ...); optional plugins and their dependencies are off.
+            options=("-Dauto_features=disabled", "-Dintrospection=disabled", "-Dexamples=disabled",
+                     "-Dtests=disabled", "-Ddoc=disabled", "-Dnls=disabled", "-Dtools=disabled", "-Dorc=disabled"),
+            pattern="libgstpbutils-1.0.so.0*"),
+    Package("nautilus", ("glibc", "glib", "gtk", "libadwaita", "gnome-desktop", "gnome-autoar", "tinysparql",
+                         "gexiv2", "glycin", "libportal", "gst-plugins-base", "icu", "wayland",
+                         "gsettings-desktop-schemas"),
+            kind="data",
+            post=nautilus_post,
+            options=("-Ddocs=false", "-Dextensions=false", "-Dintrospection=false", "-Dpackagekit=false",
+                     "-Dselinux=disabled", "-Dcloudproviders=disabled", "-Dtests=none"),
+            pattern="usr/bin/nautilus"),
     # --- A real shell: bash with the GNU and procps tools (busybox stays as /bin/sh for system scripts) ---
     Package(
         "ncurses", ("glibc",), kind="cross-autotools", post=ncurses_post,
@@ -1537,7 +2030,7 @@ def build_host_gi(lock: dict, cache: Path, work: Path) -> Path:
         )
     upstream = source(lock, cache, work / "host-gi-source")
     build_dir = work / "host-gi-build"
-    subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), f"--prefix={prefix}",
+    subprocess.run([*desktop.MESON, "setup", "--wrap-mode=nodownload", str(build_dir), str(upstream), f"--prefix={prefix}",
                     "--libdir=lib", "-Ddoctool=disabled", "-Dgtk_doc=false", "-Dtests=false",
                     "-Dcairo=disabled"], check=True)
     subprocess.run([*desktop.MESON, "install", "-C", str(build_dir)], check=True)
@@ -1553,7 +2046,7 @@ def build_host_wayland(lock: dict, cache: Path, work: Path) -> None:
     if not (prefix / "bin/wayland-scanner").is_file():
         upstream = source(lock, cache, work / "host-wayland-source")
         build_dir = work / "host-wayland-build"
-        subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), f"--prefix={prefix}",
+        subprocess.run([*desktop.MESON, "setup", "--wrap-mode=nodownload", str(build_dir), str(upstream), f"--prefix={prefix}",
                         "--libdir=lib", "-Dlibraries=false", "-Dscanner=true", "-Dtests=false",
                         "-Ddocumentation=false", "-Ddtd_validation=false"], check=True)
         subprocess.run([*desktop.MESON, "install", "-C", str(build_dir)], check=True)
@@ -1641,6 +2134,36 @@ def build_host_sassc(locks: dict, cache: Path, work: Path) -> None:
     os.environ["PATH"] = f"{prefix}/bin{os.pathsep}{os.environ['PATH']}"
 
 
+HOST_BLUEPRINT = Path("build/host-tools/blueprint-compiler")
+
+
+def build_host_blueprint(lock: dict, cache: Path, work: Path) -> None:
+    """Install the pinned native Blueprint compiler used to turn GNOME app .blp files into GtkBuilder XML."""
+    prefix = HOST_BLUEPRINT.resolve()
+    if not (prefix / "bin/blueprint-compiler").is_file():
+        upstream = source(lock, cache, work / "host-blueprint-source")
+        build_dir = work / "host-blueprint-build"
+        subprocess.run([*desktop.MESON, "setup", "--wrap-mode=nodownload", str(build_dir), str(upstream),
+                        f"--prefix={prefix}", "-Ddocs=false"], check=True)
+        subprocess.run([*desktop.MESON, "install", "-C", str(build_dir)], check=True)
+    site_packages = next((prefix / "lib").glob("python*/site-packages"))
+    os.environ["PYTHONPATH"] = os.pathsep.join(
+        (str(site_packages), os.environ.get("PYTHONPATH", ""))
+    ).rstrip(os.pathsep)
+    # The editor sandbox's Python lacks PyGObject; run this pure-Python host tool with the host interpreter,
+    # which also has the Gtk/Adwaita typelibs Blueprint consults while validating UI definitions.
+    wrapper_dir = work / "host-blueprint-bin"
+    wrapper_dir.mkdir(exist_ok=True)
+    wrapper = wrapper_dir / "blueprint-compiler"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f'exec flatpak-spawn --host env PYTHONPATH="{site_packages}" python3 '
+        f'"{prefix}/bin/blueprint-compiler" "$@"\n'
+    )
+    wrapper.chmod(0o755)
+    os.environ["PATH"] = f"{wrapper_dir}{os.pathsep}{os.environ['PATH']}"
+
+
 HOST_LIBXCVT = Path("build/host-tools/libxcvt")
 
 
@@ -1650,7 +2173,7 @@ def build_host_libxcvt(lock: dict, cache: Path, work: Path) -> None:
     if not (prefix / "bin/cvt").is_file():
         upstream = source(lock, cache, work / "host-libxcvt-source")
         build_dir = work / "host-libxcvt-build"
-        subprocess.run([*desktop.MESON, "setup", str(build_dir), str(upstream), f"--prefix={prefix}",
+        subprocess.run([*desktop.MESON, "setup", "--wrap-mode=nodownload", str(build_dir), str(upstream), f"--prefix={prefix}",
                         "--libdir=lib"], check=True)
         subprocess.run([*desktop.MESON, "install", "-C", str(build_dir)], check=True)
     os.environ["PATH"] = f"{prefix}/bin{os.pathsep}{os.environ['PATH']}"
@@ -1750,6 +2273,14 @@ def _unused(pkg, lock, cache, work, output):
     desktop.build_meson(lock, pkg.name, cache, work, output, pkg.deps, pkg.options, pkg.pattern)
 
 
+
+
+def scratch_dir() -> str:
+    """build/tmp, also exported as TMPDIR so Kiln's own extraction stays off the RAM disk."""
+    path = Path("build/tmp").resolve()
+    path.mkdir(parents=True, exist_ok=True)
+    os.environ["TMPDIR"] = str(path)
+    return str(path)
 
 
 def gentle_environment(work: Path, jobs: int) -> None:
@@ -1857,19 +2388,22 @@ def main() -> int:
             shutil.rmtree(keep_dir, ignore_errors=True)
             keep_dir.mkdir(parents=True)
         with (contextlib.nullcontext(str(keep_dir)) if args.keep
-              else tempfile.TemporaryDirectory(prefix="meldra-gnome-")) as directory:
+              # /tmp is a small RAM disk here; sysroots with Mesa outgrow it, so work on the real disk.
+              else tempfile.TemporaryDirectory(prefix="meldra-gnome-", dir=scratch_dir())) as directory:
             work = Path(directory)
             gentle_environment(work, max(1, args.jobs))
             desktop.MESON = pinned_meson(lock_data["host_tools"]["meson"], args.cache, work)
             build_host_wayland(lock_data["desktop"]["wayland"], args.cache, work)
             build_host_libxcvt(locks["libxcvt"], args.cache, work)
-            if "gnome-shell" in args.names:
+            if {"gnome-shell", "libadwaita"} & set(args.names):   # both compile their stylesheets with sassc
                 build_host_sassc(locks, args.cache, work)
+            if args.all or "nautilus" in args.names:
+                build_host_blueprint(lock_data["host_tools"]["blueprint_compiler"], args.cache, work)
             if "librsvg" in args.names:
                 ensure_host_cargo_c(lock_data["host_tools"]["cargo_c"], args.cache)
             # Build-time-only Python modules (templating), from pinned wheels.
             wheel_paths = []
-            for tool in ("jinja2", "markupsafe", "docutils"):
+            for tool in ("jinja2", "markupsafe", "docutils", "pyyaml"):
                 tool_work = work / f"host-{tool}"
                 tool_work.mkdir()
                 wheel_paths.append(str(python_wheel(lock_data["host_tools"][tool], args.cache, tool_work)))

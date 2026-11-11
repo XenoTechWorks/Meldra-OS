@@ -126,6 +126,9 @@ def cross_file(work: Path, sysroot: Path) -> Path:
         f"'-Wl,-rpath-link,{sysroot.resolve()}/usr/lib64', "
         f"'-Wl,-rpath-link,{sysroot.resolve()}/lib64']\n"
         "[properties]\n"
+        # Same architecture, newer glibc: programs built for the target must run through its loader, never
+        # directly (meson would otherwise run them natively against the build machine's glibc).
+        "needs_exe_wrapper = true\n"
         f"sys_root = '{sysroot.resolve()}'\n"
         f"pkg_config_libdir = ['{sysroot.resolve()}/usr/lib64/pkgconfig', "
         f"'{sysroot.resolve()}/usr/lib/pkgconfig', '{sysroot.resolve()}/usr/share/pkgconfig']\n",
@@ -150,7 +153,7 @@ def build_meson(
     build_dir = unit / "build"
     stage = unit / "package/root"
     subprocess.run(
-        [*MESON, "setup", str(build_dir), str(upstream), "--prefix=/usr",
+        [*MESON, "setup", "--wrap-mode=nodownload", str(build_dir), str(upstream), "--prefix=/usr",
          "--cross-file", str(cross), *options], check=True,
     )
     subprocess.run([*MESON, "compile", "-C", str(build_dir)], check=True)

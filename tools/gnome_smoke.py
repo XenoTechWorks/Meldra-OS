@@ -74,8 +74,8 @@ def main() -> int:
         deadline = time.time() + args.timeout
         started = False
         while time.time() < deadline:
-            # The session writes its messages to /run/user/<uid>/meldra-session.log; read it over the serial shell.
-            probe = vm("serial", "cat /run/user/*/meldra-session.log 2>/dev/null | grep -c 'GNOME Shell started at'",
+            # The session writes its messages to ~/.local/state/meldra/session.log; read it over the serial shell.
+            probe = vm("serial", "cat /home/*/.local/state/meldra/session.log 2>/dev/null | grep -c 'GNOME Shell started at'",
                        check=False)
             if any(line.strip().isdigit() and int(line.strip()) > 0 for line in probe.splitlines()):
                 started = True

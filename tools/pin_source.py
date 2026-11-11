@@ -24,6 +24,7 @@ def main() -> int:
     parser.add_argument("version")
     parser.add_argument("url")
     parser.add_argument("--role", default="")
+    parser.add_argument("--file", help="cache file name, when the URL's last part is ambiguous (v1.2.tar.gz)")
     parser.add_argument("--sha256", help="expected checksum from the project; the pin fails on a mismatch")
     parser.add_argument("--lock", type=Path, default=Path("sources.lock.toml"))
     parser.add_argument("--cache", type=Path, default=Path("build/downloads"))
@@ -41,7 +42,7 @@ def main() -> int:
         print(f"{args.name} is pinned at {existing['version']}; edit it by hand", file=sys.stderr)
         return 1
     args.cache.mkdir(parents=True, exist_ok=True)
-    archive = args.cache / Path(args.url).name
+    archive = args.cache / (args.file or Path(args.url).name)
     if not archive.is_file():
         part = archive.with_suffix(archive.suffix + ".part")
         with urllib.request.urlopen(args.url, timeout=120) as response, part.open("wb") as out:
@@ -55,6 +56,8 @@ def main() -> int:
         return 1
     with args.lock.open("a", encoding="utf-8") as stream:
         stream.write(f'\n[{section}.{key}]\nversion = "{args.version}"\nurl = "{args.url}"\nsha256 = "{digest}"\n')
+        if args.file:
+            stream.write(f'file = "{args.file}"\n')
         if args.role:
             stream.write(f'role = "{args.role}"\n')
     print(f"pinned {args.name} {args.version} sha256={digest}")

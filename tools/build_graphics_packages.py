@@ -30,7 +30,8 @@ def digest(path: Path) -> str:
 
 
 def source(lock: dict, cache: Path, work: Path) -> Path:
-    archive = cache / Path(lock["url"]).name
+    # "file" names the cached download when the URL's last component is ambiguous (GitHub tag archives).
+    archive = cache / lock.get("file", Path(lock["url"]).name)
     cache.mkdir(parents=True, exist_ok=True)
     if not archive.is_file():
         temporary = archive.with_suffix(archive.suffix + ".part")
@@ -47,6 +48,12 @@ def source(lock: dict, cache: Path, work: Path) -> Path:
             path = Path(member.name)
             if path.is_absolute() or ".." in path.parts:
                 raise RuntimeError(f"unsafe source member: {member.name}")
+        # Some release tarballs carry symlinks to absolute paths on the maintainer's machine (kmod's
+        # build-aux/compile -> /usr/share/automake-*/compile). They point at nothing here; skip them, loudly.
+        skipped = [m for m in members if m.issym() and m.linkname.startswith("/")]
+        for member in skipped:
+            print(f"skipping absolute symlink in source: {member.name} -> {member.linkname}", flush=True)
+        members = [m for m in members if m not in skipped]
         bundle.extractall(destination, members=members, filter="data")
     roots = list(destination.iterdir())
     if len(roots) != 1 or not roots[0].is_dir():

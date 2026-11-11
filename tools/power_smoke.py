@@ -18,7 +18,7 @@ def vm(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def exercise(action: str, initrd: Path, timeout: float) -> None:
-    started = vm("start", "--initrd", str(initrd), "--memory", "2048", "--cpus", "2")
+    started = vm("start", "--initrd", str(initrd), "--memory", "4096", "--cpus", "2")
     if started.returncode:
         raise RuntimeError(started.stderr.strip() or started.stdout.strip())
     try:
@@ -34,7 +34,12 @@ def exercise(action: str, initrd: Path, timeout: float) -> None:
         deadline = time.time() + 15
         while time.time() < deadline:
             if "not running" in vm("status").stdout:
-                print(f"PASS: elogind {action} stopped the VM")
+                # QEMU runs with -no-reboot, so it exits on a restart too: the kernel's last words tell them apart.
+                log = vm("log", "40").stdout
+                expected = "reboot: Power down" if action == "poweroff" else "reboot: Restarting system"
+                if expected not in log:
+                    raise RuntimeError(f"VM stopped, but the kernel did not print {expected!r}")
+                print(f"PASS: elogind {action} stopped the VM ({expected})")
                 return
             time.sleep(0.5)
         raise RuntimeError(f"VM did not stop after loginctl {action}")
