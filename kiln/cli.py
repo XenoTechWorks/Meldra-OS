@@ -56,6 +56,9 @@ def build(source: Path, output: Path | None = None) -> str:
     with tarfile.open(output, "w:gz", format=tarfile.PAX_FORMAT) as archive:
         archive.add(manifest_path, arcname="KILN.toml", recursive=False)
         for path in sorted(payload.rglob("*")):
+            # Installs refuse hard links, so never write any: forgetting the inodes seen so far makes tarfile
+            # store every hard-linked file as a full copy (build systems such as e2fsprogs' create them).
+            archive.inodes = {}
             archive.add(path, arcname=str(Path("root") / path.relative_to(payload)), recursive=False)
     return f"built {output} ({_digest(output)})"
 
@@ -65,6 +68,7 @@ def build(source: Path, output: Path | None = None) -> str:
 SETUID_ALLOWLIST = frozenset({
     ("polkit", "root/usr/lib/polkit-1/polkit-agent-helper-1"),   # authenticates the user for polkit agents
     ("dbus", "root/usr/libexec/dbus-daemon-launch-helper"),       # starts system bus services on demand
+    ("polkit", "root/usr/bin/pkexec"),                            # runs one program as root once polkit agrees
 })
 
 

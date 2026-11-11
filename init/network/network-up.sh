@@ -21,5 +21,16 @@ if [ -z "$interface" ]; then
     sleep 30
     exit 1
 fi
+# Wait until udev has finished with the device (it writes /run/udev/data/n<ifindex> after its rules, including
+# any rename such as eth0 -> enp0s1), then use the device's final name, found by its index.
+index=$(cat "/sys/class/net/$interface/ifindex")
+tries=0
+while [ ! -e "/run/udev/data/n$index" ] && [ "$tries" -lt 50 ]; do
+    sleep 0.2
+    tries=$((tries + 1))
+done
+for path in /sys/class/net/*; do
+    [ "$(cat "$path/ifindex" 2>/dev/null)" = "$index" ] && interface=${path##*/}
+done
 /bin/ip link set "$interface" up
 exec /bin/udhcpc -f -i "$interface" -s /usr/libexec/meldra/udhcpc-script -x hostname:meldra

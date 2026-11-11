@@ -72,7 +72,7 @@ def build_busybox(binary: Path, work: Path, output: Path) -> None:
         "find", "free", "grep", "gunzip", "head", "hostname", "id", "less", "ln", "more", "nslookup", "printf",
         "pwd", "readlink", "realpath", "rmdir", "sed", "seq", "sort", "stat", "tail", "tee", "test", "[",
         "top", "touch", "tr", "true", "uniq", "uptime", "vi", "wc", "wget", "which", "whoami", "xargs",
-        "zcat", "killall", "pgrep", "pkill", "nc", "traceroute", "tree", "watch", "yes", "unzip", "xz",
+        "zcat", "cryptpw", "stty", "sync", "killall", "pgrep", "pkill", "nc", "traceroute", "tree", "watch", "yes", "unzip", "xz",
     )
     binary_target = source / "root/bin/busybox"
     binary_target.parent.mkdir(parents=True, exist_ok=True)

@@ -705,3 +705,51 @@ name = "foot"
 version = "1.28.0"
 status = "built"
 dependencies = ["glibc", "tllist", "fcft", "freetype", "fontconfig", "harfbuzz", "pixman", "wayland", "wayland-protocols", "libxkbcommon", "dejavu-fonts"]
+
+[[package]]
+name = "e2fsprogs"
+version = "1.47.4"
+status = "built"
+dependencies = ["glibc", "util-linux"]
+
+[[package]]
+name = "dosfstools"
+version = "4.2"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "greetd"
+version = "0.10.3"
+status = "built"
+dependencies = ["glibc", "linux-pam"]
+
+[[package]]
+name = "cage"
+version = "0.2.1"
+status = "built"
+dependencies = ["glibc", "wlroots", "wayland", "libxkbcommon", "pixman", "libinput", "seatd"]
+
+[[package]]
+name = "meldra-greeter"
+version = "0.1.0"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "json-glib", "greetd", "cage", "seatd", "linux-pam", "elogind"]
+
+[[package]]
+name = "meldra-installer"
+version = "0.1.0"
+status = "built"
+dependencies = ["busybox", "util-linux", "e2fsprogs", "dosfstools", "linux", "polkit", "glib", "gtk", "json-glib"]
+
+[[package]]
+name = "linux"
+version = "6.18.62"
+status = "built"
+dependencies = ["linux-modules"]
+
+[[package]]
+name = "linux-modules"
+version = "6.18.62"
+status = "built"
+dependencies = []

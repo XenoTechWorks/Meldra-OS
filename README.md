@@ -65,11 +65,34 @@ three minimal Meldra apps: Files, Text Editor and Settings.</em></p>
 <p align="center"><em>The foot terminal, launched from the app grid by mouse and driven from the keyboard.</em></p>
 
 Working: keyboard and mouse input, the Foot terminal, polkit authentication-agent registration, UPower,
-AccountsService, GeoClue, RealtimeKit, and elogind poweroff/reboot. Files, Text Editor and Settings are small Meldra
-placeholder apps (a file browser, a single-document editor, and a dark-mode switch), not Nautilus, GNOME Text Editor
-or GNOME Settings. Wired networking works (DHCP, DNS and HTTP over busybox's udhcpc; no NetworkManager or
-Wi-Fi yet, so GNOME shows no network indicator). The session starts directly, not through GDM's login screen. Audio
-and hardware acceleration remain.
+AccountsService, GeoClue, RealtimeKit, and power off/reboot from the user's session. Files, Text Editor and Settings
+are small Meldra placeholder apps (a file browser, a single-document editor, and a dark-mode switch), not Nautilus,
+GNOME Text Editor or GNOME Settings. Wired networking works (DHCP, DNS and HTTP over busybox's udhcpc; no
+NetworkManager or Wi-Fi yet, so GNOME shows no network indicator). Audio and hardware acceleration remain.
+
+## Install to disk and log in
+
+The live image has an **Install Meldra** app. It asks for a disk, a user name, a password and a computer name,
+then erases the disk and installs Meldra on it: a GPT disk with an EFI system partition and an ext4 root. The
+kernel boots straight from the firmware through its EFI stub (no bootloader menu); Secure Boot must be off.
+`meldra-install` is the same installer on the command line.
+
+<p align="center">
+  <img src="docs/screenshots/meldra-installer.png" width="720" alt="The Install Meldra window asking for a user name, password and computer name">
+</p>
+
+Installed systems start at Meldra's login screen: greetd runs the login form in the cage kiosk compositor and
+starts GNOME after a successful login. (GDM is not used: since GNOME 49 it needs systemd, which Meldra does not use.)
+The live image still logs in automatically.
+
+<p align="center">
+  <img src="docs/screenshots/meldra-login.png" width="720" alt="Meldra's login screen with user name and password fields and Restart and Power off buttons">
+</p>
+
+Checked in QEMU by `tools/install_smoke.py`: install onto a blank disk, boot it with UEFI firmware, reject a wrong
+password, log in with the right one. Files, the host name and the account survive reboots. Not yet: choosing a
+keyboard layout or time zone in the installer, dual-boot next to another system, disk encryption, and testing on
+real hardware.
 
 ## What works today
 
@@ -84,7 +107,8 @@ and hardware acceleration remain.
 | Text and UI | Built | FreeType, Fontconfig, HarfBuzz, FriBidi, Cairo, Pango |
 | Window manager | Running | Labwc 0.9.1 on virtio-vga in QEMU |
 | Desktop assets | Packaged | Current GNOME backgrounds plus Aqua, Curves, and Sunset |
-| GNOME desktop | Usable preview | Shell 50.6, core apps, polkit and desktop daemons run in QEMU; GDM login and portals remain |
+| GNOME desktop | Usable preview | Shell 50.6, core apps, polkit and desktop daemons run in QEMU; portals remain |
+| Install and login | Working in QEMU | Graphical installer (GPT, EFI stub, ext4), greetd login screen, persistent home |
 
 Meldra is a developer preview, not yet an installable daily-driver OS. Audio,
 network management, graphical login, a terminal, a panel, and the full GNOME

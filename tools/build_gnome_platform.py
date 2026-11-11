@@ -30,7 +30,7 @@ from tools.build_graphics_packages import manifest, python_wheel, require_glibc_
 import tools.build_desktop_libraries as desktop
 
 
-OWNED = {"meldra-session": "0.1.0", "meldra-desktop-apps": "0.1.0",
+OWNED = {"meldra-session": "0.1.0", "meldra-desktop-apps": "0.1.0", "meldra-installer": "0.1.0", "meldra-greeter": "0.1.0",
          "gi-typelibs": "1.86.0"}   # built from this repository, so there is no upstream pin
 
 
@@ -392,18 +392,6 @@ _kiln_build = build
 def checked_build(package: Path, archive: Path):
     """Every package passes through here: sysroot-prefixed strings baked into binaries are corrected first."""
     root = Path(package) / "root"
-    if archive.name.startswith("polkit-"):
-        helper = root / "usr/lib/polkit-1/polkit-agent-helper-1"
-        if not helper.is_file():
-            raise RuntimeError("polkit: authentication helper was not installed")
-        helper.chmod(0o4755)
-    if archive.name.startswith("dbus-"):
-        helper = root / "usr/libexec/dbus-daemon-launch-helper"
-        if not helper.is_file():
-            raise RuntimeError("dbus: service activation helper was not installed")
-        # The final initramfs normalizes ownership to root:root, so use 4755.
-        # The helper itself still accepts calls only from the messagebus UID.
-        helper.chmod(0o4755)
     # pkg-config hands meson directories with the build sysroot prepended, so a package can install files to
     # <build>/sysroot/usr/share/... inside its stage. The part after "/sysroot" is exactly the directory it
     # meant, so move the file there (logged), and fail for anything else installed under a build path.
@@ -432,6 +420,25 @@ def checked_build(package: Path, archive: Path):
     for archive_file in list(root.rglob("*.la")):
         if archive_file.is_file() or archive_file.is_symlink():
             archive_file.unlink()
+    # Setuid bits last: the kernel clears them whenever a non-root user writes to a setuid file, and the
+    # baked-path fix-up above rewrites ELF files.
+    if archive.name.startswith("polkit-"):
+        helper = root / "usr/lib/polkit-1/polkit-agent-helper-1"
+        if not helper.is_file():
+            raise RuntimeError("polkit: authentication helper was not installed")
+        helper.chmod(0o4755)
+        # pkexec runs one program as root after polkit authorises it (the graphical installer uses it).
+        pkexec = root / "usr/bin/pkexec"
+        if not pkexec.is_file():
+            raise RuntimeError("polkit: pkexec was not installed")
+        pkexec.chmod(0o4755)
+    if archive.name.startswith("dbus-"):
+        helper = root / "usr/libexec/dbus-daemon-launch-helper"
+        if not helper.is_file():
+            raise RuntimeError("dbus: service activation helper was not installed")
+        # The final initramfs normalizes ownership to root:root, so use 4755.
+        # The helper itself still accepts calls only from the messagebus UID.
+        helper.chmod(0o4755)
     return _kiln_build(package, archive)
 
 
@@ -573,6 +580,90 @@ def session_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Pat
         target = stage / "usr/libexec/meldra" / script
         shutil.copy2(f"init/network/{script}.sh", target)
         target.chmod(0o755)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def greetd_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """greetd (Rust): cargo build --locked, so every crate is checked against the checksums in Cargo.lock."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    # Reuse the Rust cross set-up (sysroot linker wrapper, static libgcc) through a minimal cross file.
+    plain = unit / "plain-cross.ini"
+    plain.write_text("[binaries]\n[properties]\n", encoding="utf-8")
+    rust_cross_file(lambda _work, _sysroot: plain)(unit, sysroot)
+    env = {**os.environ, "CARGO_TARGET_DIR": str(unit / "target"),
+           "RUSTFLAGS": f"--remap-path-prefix={upstream}=. --remap-path-prefix={Path.home()}=~"}
+    subprocess.run(["cargo", "build", "--release", "--locked", "--target", RUST_TARGET,
+                    "-j", os.environ.get("MELDRA_JOBS", "2"), "-p", "greetd", "-p", "agreety"],
+                   cwd=upstream, env=env, check=True)
+    built = unit / "target" / RUST_TARGET / "release"
+    stage = unit / "package/root"
+    (stage / "usr/sbin").mkdir(parents=True)
+    (stage / "usr/bin").mkdir(parents=True)
+    for binary, target in (("greetd", "usr/sbin/greetd"), ("agreety", "usr/bin/agreety")):
+        shutil.copy2(built / binary, stage / target)
+        subprocess.run(["strip", "--strip-unneeded", str(stage / target)], check=True)
+        require_glibc_elf(stage / target)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def meldra_greeter_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """meldra-greeter: the GTK login screen, plus greetd's configuration and PAM stacks."""
+    del cache
+    unit = work / pkg.name
+    unit.mkdir()
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    env = {**os.environ, "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"}
+    flags = subprocess.run(["pkg-config", "--cflags", "--libs", "gtk4", "json-glib-1.0"], env=env,
+                           capture_output=True, text=True, check=True).stdout.split()
+    binary = stage / "usr/libexec/meldra/meldra-greeter"
+    binary.parent.mkdir(parents=True)
+    subprocess.run(["gcc", f"--sysroot={root}", "-std=gnu11", "-O2", "-Wall", "-Wextra", "-Werror",
+                    "-o", str(binary), "desktop/meldra-greeter.c", *flags, "-Wl,--allow-shlib-undefined",
+                    f"-Wl,-rpath-link,{root}/usr/lib", f"-Wl,-rpath-link,{root}/lib64"], check=True)
+    require_glibc_elf(binary)
+    for source_file, target in (("init/greetd/config.toml", "etc/greetd/config.toml"),
+                                ("init/greetd/session-env.conf", "etc/meldra/session-env.conf"),
+                                ("init/pam.d/greetd", "etc/pam.d/greetd"),
+                                ("init/pam.d/greetd-greeter", "etc/pam.d/greetd-greeter")):
+        (stage / target).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_file, stage / target)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def meldra_installer_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """meldra-installer: the meldra-install back end, the Install Meldra window, and its polkit action."""
+    del cache
+    unit = work / pkg.name
+    unit.mkdir()
+    # Compile against the libraries only; busybox, the disk tools and the kernel are runtime dependencies.
+    sysroot = desktop.make_sysroot(output, unit, ("glibc", "glib", "gtk", "json-glib"))
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    (stage / "usr/sbin").mkdir(parents=True)
+    (stage / "usr/bin").mkdir(parents=True)
+    target = stage / "usr/sbin/meldra-install"
+    shutil.copy2("installer/meldra-install.sh", target)
+    target.chmod(0o755)
+    env = {**os.environ, "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"}
+    flags = subprocess.run(["pkg-config", "--cflags", "--libs", "gtk4", "json-glib-1.0"], env=env,
+                           capture_output=True, text=True, check=True).stdout.split()
+    binary = stage / "usr/bin/meldra-installer-gui"
+    subprocess.run(["gcc", f"--sysroot={root}", "-std=gnu11", "-O2", "-Wall", "-Wextra", "-Werror",
+                    "-o", str(binary), "installer/meldra-installer-gui.c", *flags, "-Wl,--allow-shlib-undefined",
+                    f"-Wl,-rpath-link,{root}/usr/lib", f"-Wl,-rpath-link,{root}/lib64"], check=True)
+    require_glibc_elf(binary)
+    for source_file, destination in (
+            ("installer/org.meldra.installer.policy", "usr/share/polkit-1/actions/org.meldra.installer.policy"),
+            ("installer/org.meldra.Installer.desktop", "usr/share/applications/org.meldra.Installer.desktop")):
+        (stage / destination).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_file, stage / destination)
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
@@ -987,6 +1078,24 @@ PACKAGES = [
         pattern="libpam.so.0.*",
     ),
     Package("meldra-session", ("glibc", "linux-pam", "libxcrypt", "elogind"), kind="custom"),
+    Package(
+        # Rebuilt here (the graphics stack's copy predates elogind) so libseat can use elogind: cage, the login
+        # screen's compositor, then gets its devices from the same seat manager as GNOME, with no seatd daemon.
+        "seatd", ("glibc", "elogind"),
+        options=("-Dlibseat-logind=elogind", "-Dlibseat-seatd=enabled", "-Dlibseat-builtin=disabled",
+                 "-Dserver=enabled", "-Dexamples=disabled", "-Dman-pages=disabled"),
+        pattern="libseat.so.1*",
+    ),
+    Package("greetd", ("glibc", "linux-pam"), kind="custom"),
+    Package(
+        "cage", ("glibc", "wlroots", "libdrm", "libffi", "expat", "wayland", "wayland-protocols", "mesa",
+                 "libxkbcommon", "eudev", "libevdev", "mtdev", "libinput", "pixman", "seatd", "libdisplay-info"),
+        kind="data", options=("-Dman-pages=disabled",), pattern="usr/bin/cage",
+    ),
+    Package("meldra-greeter", ("glibc", "glib", "gtk", "json-glib", "greetd", "cage", "seatd", "linux-pam",
+                               "elogind"), kind="custom"),
+    Package("meldra-installer", ("busybox", "util-linux", "e2fsprogs", "dosfstools", "linux", "polkit", "glibc",
+                                 "glib", "gtk", "json-glib"), kind="custom"),
     Package("meldra-desktop-apps", ("glibc", "glib", "gtk"), kind="custom"),
     Package("gi-typelibs", ("glibc", "glib"), kind="custom"),
     Package(
@@ -1105,6 +1214,18 @@ PACKAGES = [
                  "--disable-udev", "--disable-gstreamer", "--disable-gtk", "--disable-gtk3", "--disable-tdb",
                  "--disable-lynx"),
         pattern="libcanberra.so.0.*",
+    ),
+    Package(
+        "e2fsprogs", ("glibc", "util-linux"), kind="autotools",
+        options=("--disable-nls", "--disable-fuse2fs", "--disable-fsck", "--disable-uuidd", "--disable-libuuid",
+                 "--disable-libblkid", "--disable-e2initrd-helper", "--without-udev-rules-dir",
+                 "--without-systemd-unit-dir", "--without-crond-dir", "--disable-defrag", "--enable-elf-shlibs",
+                 "--libdir=/usr/lib", "--sbindir=/usr/sbin", "--sysconfdir=/etc"),
+        pattern="libext2fs.so.2.*",
+    ),
+    Package(
+        "dosfstools", ("glibc",), kind="autotools-data", options=("--enable-compat-symlinks", "--sbindir=/usr/sbin"),
+        pattern="usr/sbin/mkfs.fat",
     ),
     Package("tllist", ("glibc",), kind="data", pattern="usr/include/tllist.h"),
     Package(
@@ -1232,15 +1353,20 @@ PACKAGES = [
     Package(
         "util-linux", ("glibc",), kind="autotools",
         options=("--disable-all-programs", "--enable-libmount", "--enable-libblkid",
-                 "--enable-libuuid", "--disable-nls", "--without-python", "--without-systemd",
-                 "--without-udev", "--without-ncurses", "--without-readline", "--libdir=/usr/lib", "--enable-usrdir-path",
+                 "--enable-libuuid", "--enable-libfdisk", "--enable-libsmartcols",
+                 # Disk tools the installer uses: partitioning, discovery, and wiping old signatures.
+                 "--enable-fdisks=check", "--enable-lsblk", "--enable-blkid", "--enable-wipefs", "--disable-nls", "--without-python", "--without-systemd",
+                 "--without-udev", "--without-ncurses", "--without-tinfo", "--without-readline", "--libdir=/usr/lib", "--enable-usrdir-path",
                  "--disable-static", "--enable-shared"),
         pattern="libmount.so.1.*",
     ),
     Package(
         "elogind", ("glibc", "libcap", "eudev", "dbus", "util-linux", "linux-pam", "libxcrypt"),
         options=("-Dpam=true", "-Dacl=disabled", "-Daudit=disabled", "-Dselinux=disabled",
-                 "-Dman=disabled", "-Dhtml=disabled", "-Dtests=false", "-Dpolkit=false",
+                 "-Dman=disabled", "-Dhtml=disabled", "-Dtests=false",
+                 # Without polkit support elogind refuses every privileged call from non-root users (power off,
+                 # reboot, inhibitors); with it, polkit decides (active local sessions may power off).
+                 "-Dpolkit=true",
                  "-Dsmack=false", "-Dcgroup-controller=elogind", "-Ddefault-hierarchy=unified",
                  "-Dutmp=false", "-Dpamlibdir=/usr/lib/security", "-Ddbuspolicydir=/usr/share/dbus-1/system.d",
                  "-Ddbussystemservicedir=/usr/share/dbus-1/system-services", "-Dudevrulesdir=/usr/lib/udev/rules.d"),

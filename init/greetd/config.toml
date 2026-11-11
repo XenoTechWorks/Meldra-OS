@@ -1,0 +1,10 @@
+# greetd: Meldra's login manager. The login screen (meldra-greeter) runs fullscreen in the cage kiosk
+# compositor as the unprivileged "greeter" user; after a successful login greetd starts the user's GNOME session.
+[terminal]
+vt = 1
+
+[default_session]
+# Software rendering until Mesa has GPU drivers: wlroots draws with pixman, GTK with Cairo. The greeter gets its
+# own session bus (GTK expects one).
+command = "/bin/env WLR_RENDERER=pixman GSK_RENDERER=cairo /usr/bin/cage -s -d -- /usr/bin/dbus-run-session /usr/libexec/meldra/meldra-greeter"
+user = "greeter"

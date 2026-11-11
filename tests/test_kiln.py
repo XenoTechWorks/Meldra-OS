@@ -67,6 +67,20 @@ class PackageManagerTests(unittest.TestCase):
         with self.assertRaises(PackageError):
             install(self.setuid_package("impostor", "root/usr/lib/polkit-1/polkit-agent-helper-1"), self.root)
 
+    def test_hard_links_are_packaged_as_copies(self):
+        source = self.work / "linked"
+        (source / "root/usr/bin").mkdir(parents=True)
+        (source / "KILN.toml").write_text('[package]\nname="linked"\nversion="1"\n', encoding="utf-8")
+        original = source / "root/usr/bin/mke2fs"
+        original.write_text("tool\n", encoding="utf-8")
+        (source / "root/usr/bin/mkfs.ext4").hardlink_to(original)
+        package = self.work / "linked.kiln"
+        build(source, package)
+        with tarfile.open(package) as archive:
+            self.assertFalse(any(member.islnk() for member in archive.getmembers()))
+        install(package, self.root)
+        self.assertEqual((self.root / "usr/bin/mkfs.ext4").read_text(), "tool\n")
+
     def test_builds_installable_package(self):
         source = self.work / "source"
         (source / "root/usr/share/hello").mkdir(parents=True)

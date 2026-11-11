@@ -34,6 +34,8 @@ QMP = STATE / "qmp.sock"
 SERIAL = STATE / "serial.sock"
 LOG = STATE / "serial.log"
 PIDFILE = STATE / "qemu.pid"
+UEFI_CODE = "/usr/share/qemu/edk2-x86_64-code.fd"   # on the host, where QEMU runs
+UEFI_VARS = STATE / "uefi-vars.fd"
 
 
 def on_host(command: str, check: bool = False) -> subprocess.CompletedProcess:
@@ -86,11 +88,44 @@ def click(x: int, y: int, width: int = 1280, height: int = 800) -> None:
         time.sleep(0.2)
 
 
+# QEMU key names for characters that are not plain lower-case letters or digits (US layout).
+KEYS = {" ": "spc", "-": "minus", "_": "shift-minus", "=": "equal", "+": "shift-equal", "/": "slash",
+        "?": "shift-slash", ".": "dot", ">": "shift-dot", ",": "comma", "<": "shift-comma", ";": "semicolon",
+        ":": "shift-semicolon", "'": "apostrophe", '"': "shift-apostrophe", "\\": "backslash",
+        "|": "shift-backslash", "~": "shift-grave_accent", "`": "grave_accent", "!": "shift-1", "@": "shift-2",
+        "#": "shift-3", "$": "shift-4", "%": "shift-5", "^": "shift-6", "&": "shift-7", "*": "shift-8",
+        "(": "shift-9", ")": "shift-0", "[": "bracket_left", "]": "bracket_right", "{": "shift-bracket_left",
+        "}": "shift-bracket_right", "\n": "ret"}
+
+
+def type_text(text: str, delay: float = 0.1) -> None:
+    """Type text into the guest through the monitor ("\n" presses Enter)."""
+    for character in text:
+        key = KEYS.get(character) or (f"shift-{character.lower()}" if character.isupper() else character)
+        monitor(f"sendkey {key}", wait=delay)
+
+
 def start(args: argparse.Namespace) -> int:
     if qemu_running():
         print("a qemu-system process is already running; stop it first (one VM at a time)", file=sys.stderr)
         return 1
-    for needed in ((Path(args.iso),) if args.iso else (Path(args.kernel), Path(args.initrd))):
+    if args.boot_disk:
+        args.uefi = True
+        if not args.disk:
+            print("--boot-disk needs --disk", file=sys.stderr)
+            return 1
+    if args.disk and not Path(args.disk).exists():
+        with open(args.disk, "wb") as image:
+            image.truncate(args.disk_size * 1024 ** 3)   # sparse: only written blocks use space
+        print(f"created {args.disk} ({args.disk_size} GiB, sparse)")
+    if args.uefi:
+        STATE.mkdir(parents=True, exist_ok=True)
+        if not UEFI_VARS.exists():
+            # A fresh copy of QEMU's variable-store template (the i386 one serves x86_64 too).
+            on_host(f"cp /usr/share/qemu/edk2-i386-vars.fd {shlex.quote(str(UEFI_VARS.resolve()))}", check=True)
+    needed_files = ((Path(args.iso),) if args.iso else () if args.boot_disk else
+                    (Path(args.kernel),) if args.no_initrd else (Path(args.kernel), Path(args.initrd)))
+    for needed in needed_files:
         if not needed.is_file():
             print(f"missing {needed}", file=sys.stderr)
             return 1
@@ -103,7 +138,11 @@ def start(args: argparse.Namespace) -> int:
         "qemu-system-x86_64", "-machine", "q35,accel=kvm:tcg", "-cpu", "max",
         "-m", str(args.memory), "-smp", str(args.cpus),
         *(["-cdrom", args.iso, "-boot", "d"] if args.iso else
-          ["-kernel", args.kernel, "-initrd", args.initrd, "-append", args.append]),
+          [] if args.boot_disk else
+          ["-kernel", args.kernel, *([] if args.no_initrd else ["-initrd", args.initrd]), "-append", args.append]),
+        *(["-drive", f"file={args.disk},format=raw,if=virtio,cache=unsafe"] if args.disk else []),
+        *(["-drive", f"if=pflash,format=raw,readonly=on,file={UEFI_CODE}",
+           "-drive", f"if=pflash,format=raw,file={UEFI_VARS}"] if args.uefi else []),
         "-nic", "user,model=virtio-net-pci", "-device", "virtio-vga", "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci",
         "-display", args.display,
         "-monitor", f"unix:{MONITOR},server=on,wait=off",
@@ -240,6 +279,11 @@ def main() -> int:
     s.add_argument("--initrd", default="build/meldra-gnome-initramfs.cpio.gz")
     s.add_argument("--memory", type=int, default=4096)
     s.add_argument("--cpus", type=int, default=2)
+    s.add_argument("--disk", help="attach this raw disk image as a virtio drive (created, sparse, if missing)")
+    s.add_argument("--disk-size", type=int, default=16, help="size in GiB when --disk is created")
+    s.add_argument("--uefi", action="store_true", help="boot with UEFI firmware (edk2) instead of BIOS")
+    s.add_argument("--boot-disk", action="store_true", help="boot the --disk itself through UEFI (no -kernel)")
+    s.add_argument("--no-initrd", action="store_true", help="boot -kernel without an initramfs (root from --disk)")
     s.add_argument("--iso", help="boot this ISO from a virtual CD (through its bootloader) instead of -kernel/-initrd")
     s.add_argument("--display", default="none", help="QEMU display backend; 'gtk' opens a window you can use")
     s.add_argument("--append", default="console=ttyS0 rdinit=/init panic=1 loglevel=6")

@@ -74,11 +74,11 @@ def main() -> int:
         deadline = time.time() + args.timeout
         started = False
         while time.time() < deadline:
-            log = vm("log", "4000")
-            if "GNOME Shell started at" in log:
+            # The session writes its messages to /run/user/<uid>/meldra-session.log; read it over the serial shell.
+            probe = vm("serial", "cat /run/user/*/meldra-session.log 2>/dev/null | grep -c 'GNOME Shell started at'",
+                       check=False)
+            if any(line.strip().isdigit() and int(line.strip()) > 0 for line in probe.splitlines()):
                 started = True
-                break
-            if "95-gnome exited" in log:
                 break
             time.sleep(3)
         evidence.append(f"shell started: {started}")

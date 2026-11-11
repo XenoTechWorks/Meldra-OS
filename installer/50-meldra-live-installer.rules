@@ -1,0 +1,7 @@
+// Live image only (the installer deletes this file from the installed system): the live account has no password
+// and the live system has nothing to protect, so it may run the installer from its active local session.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.meldra.installer" && subject.user == "meldra" && subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});

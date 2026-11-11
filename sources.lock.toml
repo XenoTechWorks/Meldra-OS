@@ -685,3 +685,27 @@ version = "1.1.0"
 url = "https://codeberg.org/dnkl/tllist/archive/1.1.0.tar.gz"
 sha256 = "0e7b7094a02550dd80b7243bcffc3671550b0f1d8ba625e4dff52517827d5d23"
 role = "terminal stack (foot); pinned from Codeberg's tag archive, hash computed on download"
+
+[gnome.dosfstools]
+version = "4.2"
+url = "https://github.com/dosfstools/dosfstools/releases/download/v4.2/dosfstools-4.2.tar.gz"
+sha256 = "64926eebf90092dca21b14259a5301b7b98e7b1943e8a201c7d726084809b527"
+role = "mkfs.vfat for the installer's EFI system partition; matches Debian's orig tarball digest"
+
+[gnome.e2fsprogs]
+version = "1.47.4"
+url = "https://mirrors.edge.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v1.47.4/e2fsprogs-1.47.4.tar.xz"
+sha256 = "fd5bf388cbdbe006a3d3b318d983b2948382440acc85a87f1e7d108653e8db0b"
+role = "mkfs.ext4 and fsck for installed root filesystems; kernel.org sha256sums"
+
+[gnome.greetd]
+version = "0.10.3"
+url = "https://git.sr.ht/~kennylevinsen/greetd/archive/0.10.3.tar.gz"
+sha256 = "ee5cb70e0add4ca9c9fe57e47581ab0002d44c07743fb5492469f3b570db640b"
+role = "login daemon (PAM, sessions); sha512 matches Alpine's APKBUILD; crates are verified by Cargo.lock"
+
+[gnome.cage]
+version = "0.2.1"
+url = "https://github.com/cage-kiosk/cage/releases/download/v0.2.1/cage-0.2.1.tar.gz"
+sha256 = "fc1238e3aa5b82787a95d49cb3e1bac0671e4d3a40090087848f43f3e1f63a98"
+role = "kiosk compositor the login screen runs in; GitHub-recorded digest"

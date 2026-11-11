@@ -34,6 +34,7 @@ ROOTS = (
     "gsettings-desktop-schemas", "gcc-runtime", "glycin", "gi-typelibs", "accountsservice", "gdm", "dconf",
     "librsvg", "upower", "geoclue", "geocode-glib", "libgweather", "ibus", "gnome-settings-daemon",
     "bubblewrap", "adwaita-icon-theme", "hicolor-icon-theme", "foot", "rtkit", "meldra-desktop-apps",
+    "linux", "linux-modules", "meldra-installer", "meldra-greeter",
 )
 
 PASSWD = (
@@ -42,13 +43,21 @@ PASSWD = (
     "geoclue:x:120:120:GeoClue:/var/lib/geoclue:/bin/false\n"
     "gdm:x:121:121:GDM:/var/lib/gdm:/bin/false\n"
     "rtkit:x:122:122:RealtimeKit:/proc:/bin/false\n"
+    "greeter:x:123:123:Login screen:/var/lib/greeter:/bin/false\n"
     "meldra:x:1000:1000:Meldra:/home/meldra:/bin/sh\n"
 )
 GROUP = (
     "root:x:0:\nkmem:x:2:\ntty:x:5:\ndisk:x:6:\nlp:x:7:\ndialout:x:18:\n"
     "video:x:27:meldra\ninput:x:28:meldra\naudio:x:29:meldra\nrender:x:104:meldra\nclock:x:105:\n"
-    "messagebus:x:81:\ngeoclue:x:120:\ngdm:x:121:\nrtkit:x:122:\nmeldra:x:1000:\ncdrom:x:11:\nkvm:x:24:\n"
+    "messagebus:x:81:\ngeoclue:x:120:\ngdm:x:121:\nrtkit:x:122:\ngreeter:x:123:\nmeldra:x:1000:\ncdrom:x:11:\nkvm:x:24:\n"
 )
+LIVE_AUTOLOGIN = """
+# meldra-live-autologin (the installer removes this section)
+[initial_session]
+command = "/usr/libexec/meldra/start-gnome"
+user = "meldra"
+"""
+
 # Services of the base Hearth package that the GNOME image replaces: seatd (elogind is the seat manager
 # here) and the getty on tty1 (the session owns that VT).
 REMOVED_SERVICES = ("05-seatd.service", "90-getty.service")
@@ -161,6 +170,8 @@ def main() -> int:
     polkit_helper = root / "usr/lib/polkit-1/polkit-agent-helper-1"
     if polkit_helper.stat().st_mode & 0o7777 != 0o4755:
         raise RuntimeError("polkit authentication helper must be installed mode 4755")
+    if (root / "usr/bin/pkexec").stat().st_mode & 0o7777 != 0o4755:
+        raise RuntimeError("pkexec must be installed mode 4755")
     dbus_helper = root / "usr/libexec/dbus-daemon-launch-helper"
     if dbus_helper.stat().st_mode & 0o7777 != 0o4755:
         raise RuntimeError("D-Bus service activation helper must be installed mode 4755")
@@ -173,6 +184,9 @@ def main() -> int:
     (etc / "passwd").write_text(PASSWD, encoding="utf-8")
     (etc / "group").write_text(GROUP, encoding="utf-8")
     (etc / "machine-id").write_text(uuid.uuid4().hex + "\n", encoding="utf-8")
+    (etc / "hostname").write_text("meldra\n", encoding="utf-8")
+    # Login shells; pkexec refuses to run for a user whose shell is not listed here.
+    (etc / "shells").write_text("/bin/sh\n/bin/ash\n", encoding="utf-8")
     (etc / "ld.so.conf").write_text("/usr/lib64\n/usr/lib\n", encoding="utf-8")
     for directory in ("home/meldra", "var/lib/dbus", "run"):
         (root / directory).mkdir(parents=True, exist_ok=True)
@@ -198,6 +212,24 @@ def main() -> int:
     # activated GDM only runs as root to refuse the Shell's registration ("No display available"). The Shell
     # treats a missing GDM as normal. Add activation back together with the real GDM login flow.
     (root / "usr/share/dbus-1/system-services/org.gnome.DisplayManager.service").unlink(missing_ok=True)
+
+    # Passwords: root is locked; the live account has an empty password (PAM's nullok lets it log in at the
+    # login screen), and system accounts cannot log in. The installer rewrites this with the user's password.
+    shadow_lines = []
+    for line in PASSWD.splitlines():
+        login, _, uid = line.split(":")[:3]
+        password = "" if uid == "1000" else "!"
+        shadow_lines.append(f"{login}:{password}:20000:0:99999:7:::")
+    (etc / "shadow").write_text("\n".join(shadow_lines) + "\n", encoding="utf-8")
+    (etc / "shadow").chmod(0o600)
+    # The live image logs straight into GNOME; logging out shows the login screen. Installed systems drop this.
+    greetd_config = etc / "greetd/config.toml"
+    greetd_config.write_text(greetd_config.read_text(encoding="utf-8") + LIVE_AUTOLOGIN, encoding="utf-8")
+
+    # Live only: the passwordless live account may run the installer (the installer deletes this rule).
+    rules = etc / "polkit-1/rules.d"
+    rules.mkdir(parents=True, exist_ok=True)
+    shutil.copy2("installer/50-meldra-live-installer.rules", rules / "50-meldra-live-installer.rules")
 
     services = etc / "meldra/services"
     for name in REMOVED_SERVICES:

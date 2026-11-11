@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Install Meldra
+Comment=Install Meldra on this computer's disk
+Exec=meldra-installer-gui
+Icon=drive-harddisk
+Terminal=false
+Type=Application
+Categories=GTK;System;

@@ -1,0 +1,5 @@
+# PAM stack for the login screen itself (the "greeter" user, no password: it only shows the login form).
+auth      required  pam_permit.so
+account   required  pam_permit.so
+session   required  pam_env.so conffile=/etc/meldra/session-env.conf readenv=0
+session   required  pam_elogind.so
