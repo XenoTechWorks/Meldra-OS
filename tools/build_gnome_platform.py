@@ -139,8 +139,11 @@ def meson_data_build(pkg: Package, lock: dict, cache: Path, work: Path, output: 
         sysroot = desktop.make_sysroot(output, unit, pkg.deps)
         cross = desktop.cross_file(unit, sysroot)
         build_dir, stage = unit / "build", unit / "package/root"
+        # Run setup from inside the build directory: meson writes the #include of a header outside the source
+        # tree (gnome.mkenums_simple on the sysroot's gdesktop-enums.h) relative to its working directory.
+        build_dir.mkdir(parents=True, exist_ok=True)
         subprocess.run([*desktop.MESON, "setup", "--wrap-mode=nodownload", str(build_dir), str(upstream), "--prefix=/usr",
-                        "--cross-file", str(cross), *pkg.options], check=True)
+                        "--cross-file", str(cross), *pkg.options], check=True, cwd=build_dir)
         subprocess.run([*desktop.MESON, "compile", "-C", str(build_dir)], check=True)
         subprocess.run([*desktop.MESON, "install", "-C", str(build_dir), "--destdir", str(stage)], check=True)
         if pkg.post:
@@ -185,7 +188,9 @@ def cross_autotools_build(pkg: Package, lock: dict, cache: Path, work: Path, out
     env = {**os.environ, "CC": f"gcc --sysroot={root}", "CFLAGS": "-O2 -pipe",
            "LDFLAGS": f"-Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
            "PKG_CONFIG_SYSROOT_DIR": str(root),
-           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig", **pkg.env}
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig",
+           # msgfmt finds ITS rules (polkit's, AppStream's) in GETTEXTDATADIRS; they come with the sysroot's packages.
+           "GETTEXTDATADIRS": f"{root}/usr/share/gettext", **pkg.env}
     subprocess.run([str(upstream / "configure"), "--build=x86_64-pc-linux-gnu", "--host=x86_64-unknown-linux-gnu",
                     "--prefix=/usr", *pkg.options], cwd=build_dir, env=env, check=True)
     subprocess.run(["make", f"-j{os.environ.get('MELDRA_JOBS', '2')}"], cwd=build_dir, env=env, check=True)
@@ -252,6 +257,20 @@ def nautilus_post(stage: Path, upstream: Path, build_dir: Path) -> None:
         "  </schema>\n"
         "</schemalist>\n"
     )
+
+
+def cracklib_post(stage: Path, upstream: Path, build_dir: Path) -> None:
+    """Compile cracklib's small word list into /usr/share/cracklib/pw_dict with the target's own packer."""
+    del build_dir
+    words_file = upstream / "dicts/cracklib-small"
+    words = sorted({w.strip().lower() for w in words_file.read_text(errors="ignore").splitlines() if w.strip()})
+    loader = Path("build/sysroots/glibc/lib64/ld-linux-x86-64.so.2").resolve()
+    libs = f"{loader.parent}:{stage}/usr/lib"
+    target = stage / "usr/share/cracklib"
+    target.mkdir(parents=True, exist_ok=True)
+    subprocess.run([str(loader), "--library-path", libs, str(stage / "usr/sbin/cracklib-packer"),
+                    str(target / "pw_dict")], input="\n".join(words) + "\n", text=True, check=True,
+                   stdout=subprocess.DEVNULL)
 
 
 def bash_post(stage: Path, upstream: Path, build_dir: Path) -> None:
@@ -937,6 +956,130 @@ def lua_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
+def cups_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """libcups and its headers only: the client library Settings' Printers panel links. No print server yet."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    for patch in pkg.patches:
+        relative, before, after, old_text, new_text, why = patch
+        print(f"PATCH {relative}: {why}", flush=True)
+        apply_recorded_patch(upstream / relative, before, after, old_text, new_text, why)
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    env = {**os.environ, "CC": f"gcc --sysroot={root}", "CXX": f"g++ --sysroot={root}", "CFLAGS": "-O2 -pipe",
+           "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"}
+    subprocess.run(["./configure", "--build=x86_64-pc-linux-gnu", "--host=x86_64-unknown-linux-gnu",
+                    "--prefix=/usr", "--libdir=/usr/lib", "--sysconfdir=/etc", "--localstatedir=/var",
+                    "--with-tls=openssl", "--disable-gssapi", "--disable-avahi", "--disable-dbus",
+                    "--disable-systemd", "--without-rcdir", "--disable-pam", "--disable-static"],
+                   cwd=upstream, env=env, check=True)
+    subprocess.run(["make", f"-j{os.environ.get('MELDRA_JOBS', '2')}", "libs"], cwd=upstream, env=env, check=True)
+    subprocess.run(["make", f"BUILDROOT={stage}", "install-headers", "install-libs"], cwd=upstream, env=env,
+                   check=True)
+    for archive in (stage / "usr/lib").glob("*.a"):
+        archive.unlink()
+    # cups.pc is installed by the server's data target; ship the generated one with the library.
+    (stage / "usr/lib/pkgconfig").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(upstream / "cups.pc", stage / "usr/lib/pkgconfig/cups.pc")
+    require_glibc_elf(stage / "usr/lib/libcups.so.2")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def lvm2_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Only libdevmapper (and dmsetup) from LVM2: what cryptsetup and libblockdev link. No LVM tools yet."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    env = {**os.environ, "CC": f"gcc --sysroot={root}", "CFLAGS": "-O2 -pipe",
+           "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"}
+    subprocess.run(["./configure", "--build=x86_64-pc-linux-gnu", "--host=x86_64-unknown-linux-gnu",
+                    "--prefix=/usr", "--libdir=/usr/lib", "--sbindir=/usr/sbin", "--with-usrlibdir=/usr/lib",
+                    "--enable-pkgconfig", "--disable-selinux", "--disable-readline", "--disable-systemd-journal",
+                    "--disable-app-machineid", "--disable-sd-notify", "--with-udevdir=/usr/lib/udev/rules.d",
+                    "--enable-udev_sync", "--disable-static_link", "--with-thin=none", "--with-cache=none",
+                    "--with-vdo=none", "--with-writecache=none", "--with-integrity=none"],
+                   cwd=upstream, env=env, check=True)
+    subprocess.run(["make", f"-j{os.environ.get('MELDRA_JOBS', '2')}", "device-mapper"], cwd=upstream, env=env,
+                   check=True)
+    # Library, header and pkg-config file only: dmsetup's VDO statistics do not link in a libdm-only build.
+    subprocess.run(["make", "-C", "libdm", f"DESTDIR={stage}", "install"], cwd=upstream, env=env, check=True)
+    pc = upstream / "libdm/libdevmapper.pc"
+    if pc.exists() and not (stage / "usr/lib/pkgconfig/devmapper.pc").exists():
+        (stage / "usr/lib/pkgconfig").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(pc, stage / "usr/lib/pkgconfig/devmapper.pc")
+    for archive in stage.rglob("*.a"):
+        archive.unlink()
+    require_glibc_elf(next((stage / "usr/lib").glob("libdevmapper.so.1.*")))
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def krb5_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """MIT Kerberos libraries. configure lives in src/ and cannot run its test programs when cross-compiling,
+    so the answers for x86_64 glibc are given."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    env = {**os.environ, "CC": f"gcc --sysroot={root}", "CFLAGS": "-O2 -pipe",
+           "krb5_cv_attr_constructor_destructor": "yes,yes", "ac_cv_func_regcomp": "yes",
+           "ac_cv_printf_positional": "yes", "krb5_cv_ints_twos_compl": "yes", "krb5_cv_char_bit_8": "yes",
+           "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"}
+    # e2fsprogs' compile_et and mk_cmds are shell/awk scripts; run the sysroot's copies with their data there.
+    tools = unit / "et-tools"
+    tools.mkdir()
+    for tool, variable, data in (("compile_et", "_ET_DIR_OVERRIDE", "et"), ("mk_cmds", "_SS_DIR_OVERRIDE", "ss")):
+        (tools / tool).write_text(f'#!/bin/sh\nexport {variable}="{root}/usr/share/{data}"\n'
+                                  f'exec sh "{root}/usr/bin/{tool}" "$@"\n')
+        (tools / tool).chmod(0o755)
+    env["PATH"] = f"{tools}{os.pathsep}{env['PATH']}"
+    src = upstream / "src"
+    subprocess.run(["./configure", "--build=x86_64-pc-linux-gnu", "--host=x86_64-unknown-linux-gnu",
+                    "--prefix=/usr", "--libdir=/usr/lib", "--sysconfdir=/etc", "--localstatedir=/var/lib",
+                    "--runstatedir=/run", "--without-system-verto", "--without-keyutils", "--without-ldap",
+                    "--without-tcl", "--disable-rpath", "--with-crypto-impl=openssl", "--with-tls-impl=openssl",
+                    # com_err and ss come from e2fsprogs (both projects ship them; one copy per system).
+                    "--with-system-et", "--with-system-ss", "--enable-dns-for-realm"], cwd=src, env=env, check=True)
+    subprocess.run(["make", f"-j{os.environ.get('MELDRA_JOBS', '2')}"], cwd=src, env=env, check=True)
+    subprocess.run(["make", f"DESTDIR={stage}", "install"], cwd=src, env=env, check=True)
+    for archive in stage.rglob("*.a"):
+        archive.unlink()
+    require_glibc_elf(stage / "usr/lib/libkrb5.so.3")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def keyutils_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """libkeyutils (plain Makefile); the keyctl tool is not needed."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    stage = unit / "package/root"
+    common = [f"CC=gcc --sysroot={sysroot.resolve()}", "CFLAGS=-O2 -pipe", "LIBDIR=/usr/lib", "USRLIBDIR=/usr/lib",
+              "INCLUDEDIR=/usr/include", "NO_ARLIB=1", "SHAREDIR=/usr/share/keyutils"]
+    subprocess.run(["make", *common, "all"], cwd=upstream, check=True)
+    subprocess.run(["make", *common, f"DESTDIR={stage}", "install"], cwd=upstream, check=True)
+    for extra in ("bin", "sbin", "usr/bin", "usr/sbin", "usr/share/man", "etc"):
+        shutil.rmtree(stage / extra, ignore_errors=True)
+    # Its Makefile links libkeyutils.so with an absolute target; Kiln only installs relative links.
+    for link in (stage / "usr/lib").glob("libkeyutils.so*"):
+        if link.is_symlink() and os.readlink(link).startswith("/"):
+            target = Path(os.readlink(link)).name
+            link.unlink()
+            link.symlink_to(target)
+    require_glibc_elf(next((stage / "usr/lib").glob("libkeyutils.so.1*")))
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
 def fastfetch_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     """fastfetch (CMake), with Meldra's square logo and config as the system-wide default."""
     unit = work / pkg.name
@@ -1151,6 +1294,8 @@ def rtkit_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path)
     require_glibc_elf(daemon)
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
+
+PRINTERS_WHY = "The Printers panel needs Samba's libsmbclient (to browse Windows printers); Meldra has no Samba and no print server yet, so the panel is left out until printing lands."
 
 PACKAGES = [
     Package(
@@ -1688,6 +1833,129 @@ PACKAGES = [
                  "-Dgtk_doc=false", "-Dintrospection=true", "-Dvapi=false"),
         pattern="libnma-gtk4.so.0*",
     ),
+    # --- GNOME Settings and what it needs ---
+    Package("cracklib", ("glibc", "zlib"), kind="cross-autotools", post=cracklib_post,
+            options=("--disable-static", "--without-python", "--disable-nls", "--libdir=/usr/lib",
+                     "--sbindir=/usr/sbin", "--with-default-dict=/usr/share/cracklib/pw_dict"),
+            pattern="usr/share/cracklib/pw_dict.pwd"),
+    Package("libpwquality", ("glibc", "cracklib", "linux-pam"), kind="cross-autotools",
+            options=("--disable-static", "--disable-python-bindings", "--disable-nls", "--libdir=/usr/lib",
+                     "--with-securedir=/usr/lib/security"),
+            pattern="usr/lib/libpwquality.so.1"),
+    Package("libwacom", ("glibc", "glib", "libgudev", "eudev", "libevdev", "libxml2"),
+            options=("-Ddocumentation=disabled", "-Dtests=disabled", "-Dudev-dir=/usr/lib/udev"),
+            pattern="libwacom.so.9*"),
+    Package("modemmanager", ("glibc", "glib", "eudev", "libgudev", "polkit", "elogind", "dbus"), introspect=True,
+            options=("-Dsystemdsystemunitdir=no", "-Dsystemd_suspend_resume=false", "-Dsystemd_journal=false",
+                     "-Dpolkit=permissive", "-Dmbim=false", "-Dqmi=false", "-Dqrtr=false", "-Dintrospection=true",
+                     "-Dvapi=false", "-Dman=false", "-Dgtk_doc=false", "-Dbash_completion=false", "-Dtests=false",
+                     "-Dexamples=false", "-Dudevdir=/usr/lib/udev", "-Ddbus_policy_dir=/usr/share/dbus-1/system.d"),
+            pattern="libmm-glib.so.0*"),
+    Package("gsound", ("glibc", "glib", "libcanberra"), pattern="libgsound.so.0*",
+            options=("-Dintrospection=false", "-Denable_vala=false", "-Dgtk_doc=false")),
+    Package("gnome-bluetooth", ("glibc", "glib", "gtk", "libadwaita", "gsound", "libnotify", "eudev", "upower"),
+            introspect=True, options=("-Dsendto=false", "-Dgtk_doc=false", "-Dintrospection=true"),
+            pattern="libgnome-bluetooth-ui-3.0.so.13*"),
+    Package("librest", ("glibc", "glib", "libsoup", "libxml2", "json-glib"), introspect=True,
+            options=("-Dsoup2=false", "-Dexamples=false", "-Dtests=false", "-Dgtk_doc=false", "-Dvapi=false",
+                     "-Dintrospection=true", "-Dca_certificates=true", "-Dca_certificates_path=/etc/ssl/certs/ca-certificates.crt"),
+            pattern="librest-1.0.so.0*"),
+    Package("gnome-online-accounts", ("glibc", "glib", "json-glib", "libxml2", "dbus", "gcr", "libsoup", "libsecret",
+                                      "gtk", "libadwaita", "librest"),
+            introspect=True,
+            # The backend Settings' Online Accounts panel needs; Kerberos and the Fedora account are left out.
+            options=("-Dgoabackend=true", "-Dkerberos=false", "-Dfedora=false", "-Ddocumentation=false", "-Dman=false", "-Dgtk_doc=false",
+                     "-Dintrospection=true", "-Dvapi=false"),
+            pattern="libgoa-1.0.so.0*"),
+    Package("colord-gtk", ("glibc", "glib", "gtk", "colord", "lcms2"),
+            options=("-Dgtk4=true", "-Dgtk3=false", "-Dgtk2=false", "-Dintrospection=false", "-Dvapi=false",
+                     "-Dtests=false", "-Dman=false", "-Ddocs=false"),
+            pattern="libcolord-gtk4.so.1*"),
+    # GMP's configure tests are pre-C23 C; GCC 15 defaults to C23 and rejects them ("long long reliability").
+    Package("gmp", ("glibc",), kind="cross-autotools", env={"CFLAGS": "-O2 -pipe -std=gnu17"},
+            options=("--disable-static", "--enable-shared", "--libdir=/usr/lib"), pattern="usr/lib/libgmp.so.10"),
+    Package("nettle", ("glibc", "gmp"), kind="cross-autotools",
+            options=("--disable-static", "--disable-documentation", "--libdir=/usr/lib", "--disable-openssl"),
+            pattern="usr/lib/libnettle.so.8"),
+    Package("gnutls", ("glibc", "nettle", "gmp", "libtasn1", "p11-kit", "zlib"), kind="cross-autotools",
+            options=("--disable-static", "--disable-doc", "--disable-tests", "--disable-nls", "--disable-cxx",
+                     "--with-included-unistring", "--without-idn", "--without-tpm", "--without-tpm2",
+                     "--disable-tools", "--with-default-trust-store-file=/etc/ssl/certs/ca-certificates.crt",
+                     "--libdir=/usr/lib"),
+            pattern="usr/lib/libgnutls.so.30"),
+    Package("krb5", ("glibc", "openssl", "e2fsprogs"), kind="custom"),
+    Package("mpfr", ("glibc", "gmp"), kind="cross-autotools",
+            options=("--disable-static", "--libdir=/usr/lib"), pattern="usr/lib/libmpfr.so.6"),
+    Package("libbytesize", ("glibc", "glib", "gmp", "mpfr", "pcre2"), kind="cross-autotools",
+            options=("--disable-static", "--without-python3", "--without-gtk-doc", "--without-tools",
+                     "--disable-nls", "--libdir=/usr/lib"),
+            pattern="usr/lib/libbytesize.so.1"),
+    Package("lvm2", ("glibc", "eudev", "util-linux"), kind="custom"),
+    Package("libnvme", ("glibc", "json-c", "openssl"),
+            options=("-Dpython=disabled", "-Dopenssl=enabled", "-Dlibdbus=disabled", "-Dkeyutils=disabled",
+                     "-Djson-c=enabled", "-Ddocs=false", "-Dtests=false", "-Dexamples=false", "-Dliburing=disabled"),
+            pattern="libnvme.so.1*"),
+    Package("popt", ("glibc",), kind="cross-autotools", options=("--disable-static", "--disable-nls",
+            "--libdir=/usr/lib"), pattern="usr/lib/libpopt.so.0"),
+    Package("cryptsetup", ("glibc", "lvm2", "json-c", "openssl", "util-linux", "popt"), kind="cross-autotools",
+            options=("--disable-static", "--disable-asciidoc", "--disable-ssh-token", "--disable-external-tokens",
+                     "--disable-cryptsetup", "--disable-veritysetup", "--disable-integritysetup",
+                     "--disable-selinux", "--disable-nls", "--with-crypto_backend=openssl", "--libdir=/usr/lib",
+                     "--with-tmpfilesdir=no"),
+            pattern="usr/lib/libcryptsetup.so.12"),
+    Package("keyutils", ("glibc",), kind="custom"),
+    Package("libblockdev", ("glibc", "glib", "eudev", "kmod", "cryptsetup", "lvm2", "util-linux", "e2fsprogs",
+                            "libbytesize", "libnvme", "keyutils"), introspect=True, kind="cross-autotools",
+            options=("--disable-static", "--without-btrfs", "--without-lvm", "--without-lvm_dbus", "--without-mpath",
+                     "--without-nvdimm", "--without-smart", "--without-smartmontools", "--without-escrow",
+                     "--without-python3", "--without-tools", "--without-gtk-doc", "--disable-tests", "--without-s390",
+                     "--with-crypto", "--with-dm", "--with-loop", "--with-mdraid", "--with-part", "--with-fs",
+                     "--with-swap", "--with-nvme", "--disable-introspection", "--libdir=/usr/lib", "--sysconfdir=/etc"),
+            pattern="usr/lib/libblockdev.so.3"),
+    Package("udisks", ("glibc", "glib", "polkit", "libgudev", "eudev", "libblockdev", "util-linux", "elogind",
+                       "libbytesize", "cryptsetup", "libnvme", "lvm2", "e2fsprogs"), introspect=True,
+            kind="cross-autotools",
+            options=("--disable-static", "--disable-man", "--disable-gtk-doc", "--disable-acl", "--disable-lvm2",
+                     "--disable-iscsi", "--disable-btrfs", "--disable-smart", "--disable-lsm", "--enable-fhs-media",
+                     "--with-systemdsystemunitdir=no", "--with-udevdir=/usr/lib/udev", "--disable-introspection",
+                     "--disable-nls", "--libdir=/usr/lib", "--sysconfdir=/etc", "--localstatedir=/var"),
+            pattern="usr/lib/libudisks2.so.0"),
+    Package("cups", ("glibc", "openssl", "zlib"), kind="custom",
+            patches=(("cups/dest.c", "d6fd6b113c0425ec86819ad6ff35108da423969c0082206a3e2d9761d7c5e597",
+                      "16cd58d964fc0c106fd137351b5467b13665a8b66e3de1f3aa1eb5383415b38f",
+                      "  cups_dest_t\t*dests;\t\t\t/* Destinations */\n  char\t\tdef_name[1024],",
+                      "  cups_dest_t\t*dests;\t\t\t/* Destinations */\n"
+                      "  int\t\tnum_local;\t\t/* Number of local cupsd queues */\n"
+                      "  cups_dest_t\t*local_dests;\t\t/* Local cupsd queues */\n"
+                      "  char\t\tdef_name[1024],",
+                      "Without DNS-SD, CUPS 2.4.20 uses num_local/local_dests that only the DNS-SD variant of "
+                      "_cups_getdata_t declares; add them to the plain variant (the code initialises them)."),)),
+    Package("tecla", ("glibc", "gtk", "libadwaita", "wayland", "libxkbcommon"), kind="data",
+            pattern="usr/bin/tecla"),
+    Package("gnome-control-center",
+            ("glibc", "glib", "gtk", "libadwaita", "accountsservice", "colord", "gcr", "gnome-desktop",
+             "gnome-bluetooth", "gnome-settings-daemon", "gnome-online-accounts", "gsettings-desktop-schemas",
+             "libgudev", "ibus", "json-glib", "networkmanager", "libnma", "pulseaudio", "libsoup", "libwacom",
+             "libxml2", "modemmanager", "polkit", "libpwquality", "upower", "libepoxy", "libgtop", "geoclue",
+             "tecla", "cups", "colord-gtk", "gnutls", "krb5", "udisks", "libsecret"),
+            # introspect: the build looks up polkit's gettext ITS files in XDG_DATA_DIRS, which the introspection
+            # set-up points at the sysroot.
+            kind="data", introspect=True,
+            patches=(
+                ("panels/meson.build", "bffe064524ca0e845c5bddf4d64dad0077e23a0772d6dc9daf7647ac666fb709",
+                 "2b23328968e5666bec1b353dc18aaf3aa53679b826fe4731c95203069c7725d2",
+                 "  'printers',\n", "", PRINTERS_WHY),
+                ("shell/cc-panel-loader.c", "98051b16395074463fbec5cf56a981272d5222b9f8c420a6c3fb10bbeea44722",
+                 "27af4180cb1780bb3da07f7dd1463189a3e0ffc12da4af666628012c032558cd",
+                 "extern GType cc_printers_panel_get_type (void);\n", "", PRINTERS_WHY),
+                ("shell/cc-panel-loader.c", "27af4180cb1780bb3da07f7dd1463189a3e0ffc12da4af666628012c032558cd",
+                 "b967bf510e9d777b72a1cb0cae125c376db07019061267b5266e46aaba8200d5",
+                 '  PANEL_TYPE("printers",         cc_printers_panel_get_type,             NULL),\n', "",
+                 PRINTERS_WHY),
+            ),
+            options=("-Ddocumentation=false", "-Dtests=false", "-Dsnap=false", "-Dmalcontent=false",
+                     "-Dibus=true", "-Dlocation-services=enabled", "-Dprivileged_group=wheel"),
+            pattern="usr/bin/gnome-control-center"),
     Package("lua", ("glibc",), kind="custom"),
     Package(
         "pipewire", ("glibc", "glib", "dbus", "alsa-lib", "eudev", "elogind", "libsndfile", "readline", "ncurses"),
@@ -2221,6 +2489,23 @@ def host_python_wrapper(work: Path) -> None:
     os.environ["PATH"] = f"{directory}{os.pathsep}{os.environ['PATH']}"
 
 
+def build_host_blueprint(lock: dict, cache: Path, work: Path) -> None:
+    """blueprint-compiler (pinned source) as a build-time tool. It imports PyGObject, which this build sandbox
+    lacks, so it runs on the host; GI_TYPELIB_PATH (the target sysroot's typelibs) is passed through."""
+    root = source(lock, cache, work / "host-blueprint")
+    # Its own `meson install` stamps the version in; this uninstalled copy gets the same stamp.
+    main_py = root / "blueprintcompiler/main.py"
+    main_py.write_text(main_py.read_text().replace('VERSION = "uninstalled"', f'VERSION = "{lock["version"]}"', 1))
+    tools = work / "host-blueprint-bin"
+    tools.mkdir()
+    wrapper = tools / "blueprint-compiler"
+    wrapper.write_text('#!/bin/sh\n'
+                       'exec flatpak-spawn --host --env=GI_TYPELIB_PATH="$GI_TYPELIB_PATH" '
+                       f'python3 "{root}/blueprint-compiler.py" "$@"\n')
+    wrapper.chmod(0o755)
+    os.environ["PATH"] = f"{tools}{os.pathsep}{os.environ['PATH']}"
+
+
 def host_program_wrappers(work: Path, names: tuple[str, ...]) -> None:
     directory = work / "host-programs"
     directory.mkdir(exist_ok=True)
@@ -2395,6 +2680,8 @@ def main() -> int:
             desktop.MESON = pinned_meson(lock_data["host_tools"]["meson"], args.cache, work)
             build_host_wayland(lock_data["desktop"]["wayland"], args.cache, work)
             build_host_libxcvt(locks["libxcvt"], args.cache, work)
+            if "gnome-control-center" in args.names:
+                build_host_blueprint(pin(lock_data, "blueprint-compiler"), args.cache, work)
             if {"gnome-shell", "libadwaita"} & set(args.names):   # both compile their stylesheets with sassc
                 build_host_sassc(locks, args.cache, work)
             if args.all or "nautilus" in args.names:

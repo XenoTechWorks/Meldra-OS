@@ -66,8 +66,9 @@ three minimal Meldra apps: Files, Text Editor and Settings.</em></p>
 
 Working, checked in QEMU:
 
-- **Apps:** GNOME Console (bash with GNU coreutils, grep, sed, findutils, gawk, less, procps, and fastfetch with the
-  Meldra logo), GNOME Files (Nautilus) and GNOME Text Editor. Settings is still a small Meldra placeholder.
+- **Apps:** GNOME Settings, GNOME Console (bash with GNU coreutils, grep, sed, findutils, gawk, less, procps, and
+  fastfetch with the Meldra logo), GNOME Files (Nautilus) and GNOME Text Editor. Settings' Printers panel is left
+  out until printing (CUPS server, Samba) lands; its About page cannot rename the computer yet.
 - **GPU acceleration:** Mesa 26 with virgl (QEMU 3D), radeonsi and RADV for AMD (compiled with ACO, no LLVM),
   nouveau and zink. Checked with virgl: `virgl (AMD Radeon ...)`. Intel (iris) needs LLVM/clang at build time and
   comes later. GPU, Wi-Fi and network firmware ships xz-compressed (275 MB).
@@ -77,6 +78,10 @@ Working, checked in QEMU:
 - **Audio:** PipeWire, WirePlumber and pipewire-pulse; GNOME's volume control works, and a test sound played
   through an emulated Intel HDA card was recorded with real signal.
 - polkit, UPower, AccountsService, GeoClue, RealtimeKit, and power off/reboot from the user's session.
+
+<p align="center">
+  <img src="docs/screenshots/gnome-settings.png" width="720" alt="GNOME Settings on Meldra showing the Network panel with a connected wired connection">
+</p>
 
 <p align="center">
   <img src="docs/screenshots/gnome-network.png" width="720" alt="GNOME quick settings on Meldra with Wired and Wi-Fi tiles, volume slider and network icon">
@@ -119,7 +124,7 @@ real hardware.
 | Text and UI | Built | FreeType, Fontconfig, HarfBuzz, FriBidi, Cairo, Pango |
 | Window manager | Running | Labwc 0.9.1 on virtio-vga in QEMU |
 | Desktop assets | Packaged | Current GNOME backgrounds plus Aqua, Curves, and Sunset |
-| GNOME desktop | Usable preview | Shell 50.6, Console, Files, Text Editor, NetworkManager, PipeWire; Settings and portals remain |
+| GNOME desktop | Usable preview | Shell 50.6, Settings, Console, Files, Text Editor, NetworkManager, PipeWire; portals remain |
 | Install and login | Working in QEMU | Graphical installer (GPT, EFI stub, ext4), greetd login screen, persistent home |
 
 Meldra is a developer preview, not yet an installable daily-driver OS. Audio,

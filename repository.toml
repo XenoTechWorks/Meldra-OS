@@ -1059,3 +1059,153 @@ name = "xz"
 version = "5.8.4"
 status = "built"
 dependencies = ["glibc"]
+
+[[package]]
+name = "colord-gtk"
+version = "0.3.1"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "colord", "lcms2"]
+
+[[package]]
+name = "cracklib"
+version = "2.10.3"
+status = "built"
+dependencies = ["glibc", "zlib"]
+
+[[package]]
+name = "cryptsetup"
+version = "2.8.8"
+status = "built"
+dependencies = ["glibc", "lvm2", "json-c", "openssl", "util-linux", "popt"]
+
+[[package]]
+name = "cups"
+version = "2.4.20"
+status = "built"
+dependencies = ["glibc", "openssl", "zlib"]
+
+[[package]]
+name = "gmp"
+version = "6.3.0"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "gnome-bluetooth"
+version = "47.2"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "libadwaita", "gsound", "libnotify", "eudev", "upower"]
+
+[[package]]
+name = "gnome-control-center"
+version = "50.4"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "libadwaita", "accountsservice", "colord", "gcr", "gnome-desktop", "gnome-bluetooth", "gnome-settings-daemon", "gnome-online-accounts", "gsettings-desktop-schemas", "libgudev", "ibus", "json-glib", "networkmanager", "libnma", "pulseaudio", "libsoup", "libwacom", "libxml2", "modemmanager", "polkit", "libpwquality", "upower", "libepoxy", "libgtop", "geoclue", "tecla", "cups", "colord-gtk", "gnutls", "krb5", "udisks", "libsecret"]
+
+[[package]]
+name = "gnome-online-accounts"
+version = "3.56.5"
+status = "built"
+dependencies = ["glibc", "glib", "json-glib", "libxml2", "dbus", "gcr", "libsoup", "libsecret", "gtk", "libadwaita", "librest"]
+
+[[package]]
+name = "gnutls"
+version = "3.8.13"
+status = "built"
+dependencies = ["glibc", "nettle", "gmp", "libtasn1", "p11-kit", "zlib"]
+
+[[package]]
+name = "gsound"
+version = "1.0.3"
+status = "built"
+dependencies = ["glibc", "glib", "libcanberra"]
+
+[[package]]
+name = "keyutils"
+version = "1.6.3"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "krb5"
+version = "1.22.3"
+status = "built"
+dependencies = ["glibc", "openssl", "e2fsprogs"]
+
+[[package]]
+name = "libblockdev"
+version = "3.5.0"
+status = "built"
+dependencies = ["glibc", "glib", "eudev", "kmod", "cryptsetup", "lvm2", "util-linux", "e2fsprogs", "libbytesize", "libnvme", "keyutils"]
+
+[[package]]
+name = "libbytesize"
+version = "2.12"
+status = "built"
+dependencies = ["glibc", "glib", "gmp", "mpfr", "pcre2"]
+
+[[package]]
+name = "libnvme"
+version = "1.16.2"
+status = "built"
+dependencies = ["glibc", "json-c", "openssl"]
+
+[[package]]
+name = "libpwquality"
+version = "1.4.5"
+status = "built"
+dependencies = ["glibc", "cracklib", "linux-pam"]
+
+[[package]]
+name = "librest"
+version = "0.10.2"
+status = "built"
+dependencies = ["glibc", "glib", "libsoup", "libxml2", "json-glib"]
+
+[[package]]
+name = "libwacom"
+version = "2.17.0"
+status = "built"
+dependencies = ["glibc", "glib", "libgudev", "eudev", "libevdev", "libxml2"]
+
+[[package]]
+name = "lvm2"
+version = "2.03.44"
+status = "built"
+dependencies = ["glibc", "eudev", "util-linux"]
+
+[[package]]
+name = "modemmanager"
+version = "1.24.2"
+status = "built"
+dependencies = ["glibc", "glib", "eudev", "libgudev", "polkit", "elogind", "dbus"]
+
+[[package]]
+name = "mpfr"
+version = "4.2.2"
+status = "built"
+dependencies = ["glibc", "gmp"]
+
+[[package]]
+name = "nettle"
+version = "3.10.2"
+status = "built"
+dependencies = ["glibc", "gmp"]
+
+[[package]]
+name = "popt"
+version = "1.19"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "tecla"
+version = "50.0"
+status = "built"
+dependencies = ["glibc", "gtk", "libadwaita", "wayland", "libxkbcommon"]
+
+[[package]]
+name = "udisks"
+version = "2.11.0"
+status = "built"
+dependencies = ["glibc", "glib", "polkit", "libgudev", "eudev", "libblockdev", "util-linux", "elogind", "libbytesize", "cryptsetup", "libnvme", "lvm2", "e2fsprogs"]

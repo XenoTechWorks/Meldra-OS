@@ -41,7 +41,7 @@ ROOTS = (
     "kmod", "linux-firmware", "wireless-regdb", "mesa", "vulkan-loader", "networkmanager", "wpa-supplicant", "pipewire",
     "wireplumber",
     # Real GNOME apps.
-    "gnome-console", "gnome-text-editor", "nautilus", "nautilus",
+    "gnome-console", "gnome-text-editor", "nautilus", "gnome-control-center", "udisks", "nautilus",
 )
 
 PASSWD = (
@@ -56,7 +56,7 @@ PASSWD = (
 GROUP = (
     "root:x:0:\nkmem:x:2:\ntty:x:5:\ndisk:x:6:\nlp:x:7:\ndialout:x:18:\n"
     "video:x:27:meldra\ninput:x:28:meldra\naudio:x:29:meldra\nrender:x:104:meldra\nclock:x:105:\n"
-    "messagebus:x:81:\ngeoclue:x:120:\ngdm:x:121:\nrtkit:x:122:\ngreeter:x:123:\nmeldra:x:1000:\ncdrom:x:11:\nkvm:x:24:\n"
+    "messagebus:x:81:\ngeoclue:x:120:\ngdm:x:121:\nrtkit:x:122:\ngreeter:x:123:\nmeldra:x:1000:\nwheel:x:10:meldra\ncdrom:x:11:\nkvm:x:24:\n"
 )
 LIVE_AUTOLOGIN = """
 # meldra-live-autologin (the installer removes this section)
@@ -209,7 +209,7 @@ def main() -> int:
     (root / "usr/share/applications/org.meldra.Files.desktop").unlink(missing_ok=True)
     (root / "usr/share/applications/org.meldra.TextEditor.desktop").unlink(missing_ok=True)
     # GNOME Files replaces the placeholder file browser; VTE's demo terminal is not an app.
-    for launcher in ("org.meldra.Files.desktop", "org.gnome.Vte.App.Gtk4.desktop", "org.gnome.Vte.App.Gtk3.desktop"):
+    for launcher in ("org.meldra.Settings.desktop", "org.meldra.Files.desktop", "org.gnome.Vte.App.Gtk4.desktop", "org.gnome.Vte.App.Gtk3.desktop"):
         (root / "usr/share/applications" / launcher).unlink(missing_ok=True)
     for hidden in ("foot-server.desktop", "footclient.desktop"):
         (root / "usr/share/applications" / hidden).unlink(missing_ok=True)
