@@ -41,7 +41,7 @@ ROOTS = (
     "kmod", "linux-firmware", "wireless-regdb", "mesa", "vulkan-loader", "networkmanager", "wpa-supplicant", "pipewire",
     "wireplumber",
     # Real GNOME apps.
-    "gnome-console", "gnome-text-editor", "nautilus", "gnome-control-center", "udisks", "nautilus",
+    "gnome-console", "gnome-text-editor", "nautilus", "gnome-control-center", "udisks", "meldra-backgrounds", "shared-mime-info", "nautilus",
 )
 
 PASSWD = (
@@ -288,6 +288,9 @@ def main() -> int:
     schemas = root / "usr/share/glib-2.0/schemas"
     if schemas.is_dir():
         run_target(root, "/usr/bin/glib-compile-schemas", str(schemas))
+    # The MIME database: what file types exist (thumbnailers, Files and "Open With" are chosen by type).
+    if (root / "usr/bin/update-mime-database").is_file():
+        run_target(root, "/usr/bin/update-mime-database", str(root / "usr/share/mime"))
     query = root / "usr/bin/gdk-pixbuf-query-loaders"
     cache = root / "usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
     if query.is_file():

@@ -81,16 +81,7 @@ def main() -> int:
                 "</wallpapers>\n",
                 encoding="utf-8",
             )
-            override = package / "root/usr/share/glib-2.0/schemas/90_meldra-background.gschema.override"
-            override.parent.mkdir(parents=True, exist_ok=True)
-            uri = "file:///usr/share/backgrounds/gnome-classics/GNOME-Curves.png"
-            override.write_text(
-                "[org.gnome.desktop.background]\n"
-                f"picture-uri='{uri}'\npicture-uri-dark='{uri}'\n"
-                "[org.gnome.desktop.screensaver]\n"
-                f"picture-uri='{uri}'\n",
-                encoding="utf-8",
-            )
+            # The default background is Meldra's own (meldra-backgrounds); these are offered in Settings only.
             (package / "KILN.toml").write_text(
                 "[package]\nname = \"gnome-classic-favorites\"\nversion = \"1.0.0\"\n"
                 "architecture = \"any\"\ndependencies = [\"gnome-backgrounds\"]\n",

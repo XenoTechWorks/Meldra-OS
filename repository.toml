@@ -1209,3 +1209,39 @@ name = "udisks"
 version = "2.11.0"
 status = "built"
 dependencies = ["glibc", "glib", "polkit", "libgudev", "eudev", "libblockdev", "util-linux", "elogind", "libbytesize", "cryptsetup", "libnvme", "lvm2", "e2fsprogs"]
+
+[[package]]
+name = "brotli"
+version = "1.2.1"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "highway"
+version = "1.4.0"
+status = "built"
+dependencies = ["glibc", "gcc-runtime"]
+
+[[package]]
+name = "libglycin"
+version = "2.2.6"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "libseccomp", "lcms2", "fontconfig", "freetype", "expat", "gcc-runtime"]
+
+[[package]]
+name = "libjxl"
+version = "0.12.0"
+status = "built"
+dependencies = ["glibc", "brotli", "highway", "lcms2", "gcc-runtime"]
+
+[[package]]
+name = "meldra-backgrounds"
+version = "0.1.0"
+status = "built"
+dependencies = []
+
+[[package]]
+name = "shared-mime-info"
+version = "2.4"
+status = "built"
+dependencies = ["glibc", "glib", "libxml2", "gcc-runtime"]

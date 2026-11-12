@@ -1197,3 +1197,30 @@ version = "1.6.3"
 url = "https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/keyutils.git/snapshot/keyutils-1.6.3.tar.gz"
 sha256 = "a61d5706136ae4c05bd48f86186bcfdbd88dd8bd5107e3e195c924cfc1b39bb4"
 role = "kernel key retention library for libblockdev's crypto plugin; sha512 matches Alpine's APKBUILD"
+
+[gnome.libjxl]
+version = "0.12.0"
+url = "https://github.com/libjxl/libjxl/archive/v0.12.0/libjxl-v0.12.0.tar.gz"
+sha256 = "03e9be69a30be4011f559da75328b6d7cea8ad921fabfbd551ce10bf45cdc992"
+file = "libjxl-0.12.0.tar.gz"
+role = "JPEG XL decoder (GNOME's wallpapers); sha512 matches Alpine's APKBUILD"
+
+[gnome.highway]
+version = "1.4.0"
+url = "https://github.com/google/highway/archive/1.4.0/highway-1.4.0.tar.gz"
+sha256 = "e72241ac9524bb653ae52ced768b508045d4438726a303f10181a38f764a453c"
+file = "highway-1.4.0.tar.gz"
+role = "SIMD library for libjxl; sha512 matches Alpine's APKBUILD"
+
+[gnome.brotli]
+version = "1.2.1"
+url = "https://github.com/google/brotli/archive/refs/tags/v1.2.1.tar.gz"
+sha256 = "98d35d11a78dc453aebb7d10c3748f3f73ff78c8267c0dc697b8631f67bf7e8f"
+file = "brotli-1.2.1.tar.gz"
+role = "compression library for libjxl; sha512 matches Alpine's APKBUILD"
+
+[gnome.shared_mime_info]
+version = "2.4"
+url = "https://gitlab.freedesktop.org/xdg/shared-mime-info/-/archive/2.4/shared-mime-info-2.4.tar.gz"
+sha256 = "531291d0387eb94e16e775d7e73788d06d2b2fdd8cd2ac6b6b15287593b6a2de"
+role = "the freedesktop MIME database (file types for Files, thumbnails, Open With); sha512 matches Alpine's APKBUILD"

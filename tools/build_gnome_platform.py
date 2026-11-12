@@ -30,7 +30,7 @@ from tools.build_graphics_packages import manifest, python_wheel, require_glibc_
 import tools.build_desktop_libraries as desktop
 
 
-OWNED = {"meldra-session": "0.1.0", "meldra-desktop-apps": "0.1.0", "meldra-installer": "0.1.0", "meldra-greeter": "0.1.0",
+OWNED = {"meldra-session": "0.1.0", "meldra-backgrounds": "0.1.0", "meldra-desktop-apps": "0.1.0", "meldra-installer": "0.1.0", "meldra-greeter": "0.1.0",
          "gi-typelibs": "1.86.0"}   # built from this repository, so there is no upstream pin
 
 
@@ -38,7 +38,7 @@ def pin(lock_data: dict, name: str) -> dict:
     """A package's pin: the gnome section first, then the older desktop section."""
     if name in OWNED:
         return {"version": OWNED[name]}
-    name = {"libltdl": "libtool"}.get(name, name)   # libltdl is built from the libtool tarball
+    name = {"libltdl": "libtool", "libglycin": "glycin"}.get(name, name)   # libltdl is built from the libtool tarball
     key = name.replace("-", "_")
     return lock_data["gnome"][key] if key in lock_data["gnome"] else lock_data["desktop"][key]
 
@@ -128,8 +128,10 @@ def introspection_cross_file(original):
 def meson_data_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     """Meson package with no shared library (schemas, data files): no ELF check, `expect` must exist."""
     original = desktop.cross_file
+    if pkg.rust:
+        desktop.cross_file = rust_cross_file(desktop.cross_file)
     if pkg.introspect:
-        desktop.cross_file = introspection_cross_file(original)
+        desktop.cross_file = introspection_cross_file(desktop.cross_file)
     try:
         unit = work / pkg.name
         unit.mkdir()
@@ -271,6 +273,15 @@ def cracklib_post(stage: Path, upstream: Path, build_dir: Path) -> None:
     subprocess.run([str(loader), "--library-path", libs, str(stage / "usr/sbin/cracklib-packer"),
                     str(target / "pw_dict")], input="\n".join(words) + "\n", text=True, check=True,
                    stdout=subprocess.DEVNULL)
+
+
+def glycin_without_core(stage: Path, upstream: Path, build_dir: Path) -> None:
+    """Remove the core library and its development files; the libglycin package ships them."""
+    del upstream, build_dir
+    for pattern in ("usr/lib/libglycin-2.so*", "usr/lib/pkgconfig/glycin-2.pc", "usr/include/glycin-2",
+                    "usr/lib/girepository-1.0/Gly-2.typelib", "usr/share/gir-1.0/Gly-2.gir"):
+        for path in stage.glob(pattern):
+            shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink()
 
 
 def bash_post(stage: Path, upstream: Path, build_dir: Path) -> None:
@@ -1080,6 +1091,44 @@ def keyutils_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Pa
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
+MELDRA_WALLPAPERS = (
+    # file stem, display name, light/dark
+    ("meldra-flow-v2", "Meldra Flow"), ("meldra-mark", "Meldra Mark"), ("meldra-mark-light", "Meldra Mark Light"),
+    ("meldra-confluence", "Meldra Confluence"), ("meldra-mosaic-v2", "Meldra Mosaic"),
+    ("meldra-tidelight-v2", "Meldra Tidelight"),
+)
+
+
+def meldra_backgrounds_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Meldra's wallpapers, listed for Settings' Appearance page, and the default background (Flow for the
+    light style, Mark for dark) as a GSettings schema override."""
+    del cache
+    stage = work / pkg.name / "package/root"
+    pictures = stage / "usr/share/backgrounds/meldra"
+    properties = stage / "usr/share/gnome-background-properties"
+    schemas = stage / "usr/share/glib-2.0/schemas"
+    for directory in (pictures, properties, schemas):
+        directory.mkdir(parents=True)
+    entries = []
+    for stem, name in MELDRA_WALLPAPERS:
+        shutil.copy2(Path("assets/wallpapers") / f"{stem}.png", pictures / f"{stem}.png")
+        entries.append(f"  <wallpaper deleted=\"false\">\n    <name>{name}</name>\n"
+                       f"    <filename>/usr/share/backgrounds/meldra/{stem}.png</filename>\n"
+                       "    <options>zoom</options>\n    <shade_type>solid</shade_type>\n"
+                       "    <pcolor>#2e3a5c</pcolor>\n    <scolor>#2e3a5c</scolor>\n  </wallpaper>\n")
+    (properties / "meldra-backgrounds.xml").write_text(
+        '<?xml version="1.0"?>\n<!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">\n<wallpapers>\n'
+        + "".join(entries) + "</wallpapers>\n")
+    (schemas / "50_meldra-backgrounds.gschema.override").write_text(
+        "[org.gnome.desktop.background]\n"
+        "picture-uri='file:///usr/share/backgrounds/meldra/meldra-flow-v2.png'\n"
+        "picture-uri-dark='file:///usr/share/backgrounds/meldra/meldra-mark.png'\n"
+        "picture-options='zoom'\n\n"
+        "[org.gnome.desktop.screensaver]\n"
+        "picture-uri='file:///usr/share/backgrounds/meldra/meldra-mark.png'\n")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
 def fastfetch_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     """fastfetch (CMake), with Meldra's square logo and config as the system-wide default."""
     unit = work / pkg.name
@@ -1345,11 +1394,14 @@ PACKAGES = [
         pattern="libepoxy.so.0.*",
     ),
     Package(
-        "gdk-pixbuf", ("glibc", "glib", "libffi", "pcre2", "zlib", "libpng"), introspect=True,
+        "gdk-pixbuf", ("glibc", "glib", "libffi", "pcre2", "zlib", "libpng", "libglycin", "shared-mime-info"),
+        introspect=True,
+        # glycin built in: JPEG, JPEG XL, WebP, GIF, AVIF, TIFF and more through glycin's sandboxed loaders
+        # (the glycin package installs them). Without it gdk-pixbuf read only PNG.
         options=("-Dpng=enabled", "-Dtiff=disabled", "-Djpeg=disabled", "-Dgif=disabled",
-                 "-Dothers=disabled", "-Dgio_sniffing=false", "-Dman=false", "-Dgtk_doc=false",
+                 "-Dothers=disabled", "-Dgio_sniffing=true", "-Dman=false", "-Dgtk_doc=false",
                  "-Dintrospection=enabled", "-Dtests=false", "-Dinstalled_tests=false",
-                 "-Dbuiltin_loaders=png", "-Drelocatable=false", "-Dglycin=disabled"),
+                 "-Dbuiltin_loaders=png,glycin", "-Drelocatable=false", "-Dglycin=enabled"),
         pattern="libgdk_pixbuf-2.0.so.0.*",
     ),
     Package(
@@ -1506,11 +1558,24 @@ PACKAGES = [
     ),
     Package(
         "glycin", ("glibc", "glib", "libffi", "pcre2", "zlib", "libseccomp", "lcms2", "fontconfig", "freetype",
-                   "expat", "libpng", "gtk"),
-        introspect=True, rust=True,
-        options=("-Dglycin-loaders=true", "-Dloaders=glycin-image-rs", "-Dlibglycin=true",
+                   "expat", "libpng", "gtk", "libjxl", "librsvg", "cairo", "gcc-runtime", "libglycin"),
+        kind="data", introspect=True, rust=True, post=glycin_without_core,
+        # JPEG XL and SVG loaders: GNOME's wallpapers are .jxl and .svg. The thumbnailer makes the pictures
+        # Settings' Appearance page shows.
+        options=("-Dglycin-loaders=true", "-Dloaders=glycin-image-rs,glycin-jxl,glycin-svg", "-Dlibglycin=true",
                  "-Dlibglycin-gtk4=true", "-Dintrospection=true", "-Dvapi=false", "-Dtests=false",
-                 "-Dglycin-thumbnailer=false", "-Dcapi_docs=false", "-Dlto=false"),
+                 "-Dglycin-thumbnailer=true", "-Dcapi_docs=false", "-Dlto=false"),
+        pattern="usr/lib/libglycin-gtk4-2.so.0",
+    ),
+    Package(
+        # glycin's core library only (no GTK): gdk-pixbuf links it, and GTK links gdk-pixbuf, so it must come
+        # before both. The glycin package above adds the loaders, the GTK 4 library and the thumbnailer.
+        "libglycin", ("glibc", "glib", "libffi", "pcre2", "zlib", "libseccomp", "lcms2", "fontconfig", "freetype",
+                      "expat", "gcc-runtime"),
+        introspect=True, rust=True,
+        options=("-Dglycin-loaders=false", "-Dlibglycin=true", "-Dlibglycin-gtk4=false", "-Dintrospection=true",
+                 "-Dvapi=false", "-Dtests=false", "-Dglycin-thumbnailer=false", "-Dcapi_docs=false",
+                 "-Dlto=false"),
         pattern="libglycin-2.so.0",
     ),
     Package(
@@ -1956,6 +2021,28 @@ PACKAGES = [
             options=("-Ddocumentation=false", "-Dtests=false", "-Dsnap=false", "-Dmalcontent=false",
                      "-Dibus=true", "-Dlocation-services=enabled", "-Dprivileged_group=wheel"),
             pattern="usr/bin/gnome-control-center"),
+    # --- Wallpapers ---
+    Package("brotli", ("glibc",), kind="cmake", options=("-DBROTLI_DISABLE_TESTS=ON",),
+            pattern="libbrotlidec.so.1*"),
+    Package("highway", ("glibc", "gcc-runtime"), kind="cmake",
+            options=("-DHWY_ENABLE_TESTS=OFF", "-DHWY_ENABLE_EXAMPLES=OFF", "-DHWY_ENABLE_CONTRIB=OFF",
+                     "-DBUILD_TESTING=OFF", "-DBUILD_SHARED_LIBS=ON"),
+            pattern="libhwy.so.1*"),
+    Package("libjxl", ("glibc", "brotli", "highway", "lcms2", "gcc-runtime"), kind="cmake",
+            options=("-DJPEGXL_FORCE_SYSTEM_BROTLI=ON", "-DJPEGXL_FORCE_SYSTEM_HWY=ON",
+                     "-DJPEGXL_FORCE_SYSTEM_LCMS2=ON", "-DJPEGXL_ENABLE_SKCMS=OFF", "-DJPEGXL_ENABLE_TOOLS=OFF",
+                     "-DJPEGXL_ENABLE_EXAMPLES=OFF", "-DJPEGXL_ENABLE_BENCHMARK=OFF", "-DJPEGXL_ENABLE_DOXYGEN=OFF",
+                     "-DJPEGXL_ENABLE_MANPAGES=OFF", "-DJPEGXL_ENABLE_JPEGLI=OFF", "-DJPEGXL_ENABLE_SJPEG=OFF",
+                     "-DJPEGXL_ENABLE_OPENEXR=OFF", "-DJPEGXL_ENABLE_PLUGINS=OFF", "-DJPEGXL_ENABLE_JNI=OFF",
+                     "-DJPEGXL_BUNDLE_LIBPNG=OFF", "-DJPEGXL_ENABLE_TRANSCODE_JPEG=ON", "-DBUILD_TESTING=OFF"),
+            pattern="libjxl.so.0*"),
+    Package("meldra-backgrounds", (), kind="custom"),
+    Package("shared-mime-info", ("glibc", "glib", "libxml2", "gcc-runtime"), kind="data",
+            # The database is compiled when the image is assembled (update-mime-database), with every
+            # package's definitions present.
+            options=("-Dupdate-mimedb=false", "-Dbuild-tests=false", "-Dbuild-translations=false",
+                     "-Dbuild-tools=true"),
+            pattern="usr/bin/update-mime-database"),
     Package("lua", ("glibc",), kind="custom"),
     Package(
         "pipewire", ("glibc", "glib", "dbus", "alsa-lib", "eudev", "elogind", "libsndfile", "readline", "ncurses"),
