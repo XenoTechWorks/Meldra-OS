@@ -116,7 +116,9 @@ def start(args: argparse.Namespace) -> int:
             print("--boot-disk needs --disk", file=sys.stderr)
             return 1
     if args.disk and not Path(args.disk).exists():
-        with open(args.disk, "wb") as image:
+        disk = Path(args.disk)
+        disk.parent.mkdir(parents=True, exist_ok=True)
+        with disk.open("wb") as image:
             image.truncate(args.disk_size * 1024 ** 3)   # sparse: only written blocks use space
         print(f"created {args.disk} ({args.disk_size} GiB, sparse)")
     if args.uefi:
