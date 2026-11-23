@@ -35,16 +35,24 @@ def vm(*arguments: str, check: bool = True) -> str:
 
 def wait_for_live(timeout: float = 180) -> None:
     deadline = time.time() + timeout
+    shell_ready = False
     while time.time() < deadline:
-        probe = vm(
-            "serial",
-            "test -b /dev/vda && "
-            "grep -q 'GNOME Shell started at' /home/meldra/.local/state/meldra/session.log 2>/dev/null && "
-            "echo LIVE-READY",
-            "--timeout", "3", check=False,
-        )
-        if "LIVE-READY" in probe:
-            return
+        if not shell_ready:
+            probe = vm(
+                "serial",
+                "test -b /dev/vda && "
+                "grep -q 'GNOME Shell started at' /home/meldra/.local/state/meldra/session.log 2>/dev/null && "
+                "echo LIVE-READY",
+                "--timeout", "3", check=False,
+            )
+            shell_ready = "LIVE-READY" in probe
+        if shell_ready:
+            frame = screenshot("install-gui-live-ready")
+            # Shell writes its start marker before the first complete desktop
+            # frame on slow TCG runners. Wait for the real wallpaper, not the
+            # nearly-black initialization Overview.
+            if frame.stat().st_size > 100_000 and distinct_colours(frame) > 100:
+                return
         time.sleep(3)
     raise RuntimeError("live GNOME session did not become ready")
 
@@ -133,7 +141,14 @@ def launch_from_app_grid() -> None:
                     raise RuntimeError("Install Meldra exited before its window appeared")
                 meldra_vm.monitor("sendkey esc")
                 time.sleep(3)
-            raise RuntimeError("Install Meldra process started but its window did not appear")
+            diagnostics = vm(
+                "serial",
+                "pid=$(pidof meldra-installer-gui | awk '{print $1}'); "
+                "test -n \"$pid\" && sed -n '1,25p' /proc/$pid/status; "
+                "tail -n 80 /home/meldra/.local/state/meldra/session.log 2>/dev/null",
+                "--timeout", "10", check=False,
+            )
+            raise RuntimeError("Install Meldra process started but its window did not appear:\n" + diagnostics)
         time.sleep(2)
     raise RuntimeError("Install Meldra did not launch from the app grid search")
 
