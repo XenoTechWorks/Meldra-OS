@@ -33,6 +33,7 @@ MONITOR = STATE / "monitor.sock"
 QMP = STATE / "qmp.sock"
 SERIAL = STATE / "serial.sock"
 LOG = STATE / "serial.log"
+QEMU_LOG = STATE / "qemu.log"
 PIDFILE = STATE / "qemu.pid"
 UEFI_CODE = "/usr/share/qemu/edk2-x86_64-code.fd"   # on the host, where QEMU runs
 UEFI_VARS = STATE / "uefi-vars.fd"
@@ -133,6 +134,7 @@ def start(args: argparse.Namespace) -> int:
     for stale in (MONITOR, QMP, SERIAL, PIDFILE):
         stale.unlink(missing_ok=True)
     LOG.write_text("")
+    QEMU_LOG.write_text("")
     cwd = Path.cwd()
     qemu = [
         "qemu-system-x86_64", "-machine", "q35,accel=kvm:tcg", "-cpu", "max",
@@ -153,6 +155,9 @@ def start(args: argparse.Namespace) -> int:
         "-qmp", f"unix:{QMP},server=on,wait=off",
         "-chardev", f"socket,id=serial0,path={SERIAL},server=on,wait=off,logfile={LOG}",
         "-serial", "chardev:serial0",
+        # Keep device/guest errors after a daemonized run; this is especially
+        # useful for diagnosing virtio-gpu/virgl failures after the first frame.
+        "-d", "guest_errors", "-D", str(QEMU_LOG.resolve()),
         "-no-reboot", "-pidfile", str(PIDFILE),
     ]
     command = f"cd {shlex.quote(str(cwd))} && nice -n 10 " + " ".join(shlex.quote(a) for a in qemu)

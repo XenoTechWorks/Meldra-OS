@@ -49,5 +49,5 @@ python3 tools/meldra_vm.py start --iso build/meldra-gnome.iso
 ```
 
 The release checks are `python3 tools/gnome_smoke.py` (Shell starts, draws, reacts to mouse and keyboard) and
-`make gnome-power-smoke` (elogind poweroff and reboot stop the VM); they write `build/reports/gnome-smoke.ok` and
+`make gnome-power-smoke` (elogind suspend/resume, poweroff, and reboot); they write `build/reports/gnome-smoke.ok` and
 `build/reports/gnome-power.ok`. The live image keeps everything in RAM; nothing is saved across boots.

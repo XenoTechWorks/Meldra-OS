@@ -1,0 +1,21 @@
+[background]
+path = "/usr/share/backgrounds/gnome-classics/Sunset.png"
+fit = "cover"
+
+[appearance]
+greeting_msg = "Welcome to Meldra OS"
+
+[GTK]
+application_prefer_dark_theme = true
+cursor_blink = true
+font_name = "DejaVu Sans 12"
+icon_theme_name = "Adwaita"
+theme_name = "Adwaita"
+
+[commands]
+reboot = ["/usr/bin/loginctl", "reboot"]
+poweroff = ["/usr/bin/loginctl", "poweroff"]
+
+[widget.clock]
+format = "%A, %B %-d  %H:%M"
+resolution = "1s"

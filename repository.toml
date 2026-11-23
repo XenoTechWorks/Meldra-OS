@@ -719,10 +719,22 @@ status = "built"
 dependencies = ["glibc"]
 
 [[package]]
+name = "tzdata"
+version = "2026f"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
 name = "greetd"
 version = "0.10.3"
 status = "built"
 dependencies = ["glibc", "linux-pam"]
+
+[[package]]
+name = "regreet"
+version = "0.5.0"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "glycin", "gstreamer", "accountsservice", "dbus", "greetd", "cage", "elogind"]
 
 [[package]]
 name = "cage"
@@ -740,7 +752,7 @@ dependencies = ["glibc", "glib", "gtk", "json-glib", "greetd", "cage", "seatd", 
 name = "meldra-installer"
 version = "0.1.0"
 status = "built"
-dependencies = ["busybox", "util-linux", "e2fsprogs", "dosfstools", "linux", "polkit", "glib", "gtk", "json-glib"]
+dependencies = ["busybox", "util-linux", "e2fsprogs", "dosfstools", "linux", "polkit", "glib", "gtk", "json-glib", "efibootmgr", "cryptsetup", "meldra-crypt-initramfs", "tzdata", "xkeyboard-config"]
 
 [[package]]
 name = "linux"
@@ -959,6 +971,24 @@ status = "built"
 dependencies = ["glibc", "glib", "gtk"]
 
 [[package]]
+name = "fuse3"
+version = "3.18.3"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "xdg-desktop-portal"
+version = "1.22.1"
+status = "built"
+dependencies = ["glibc", "glib", "json-glib", "fuse3", "gdk-pixbuf", "gst-plugins-base", "pipewire", "geoclue", "libgudev", "bubblewrap"]
+
+[[package]]
+name = "xdg-desktop-portal-gnome"
+version = "50.0"
+status = "built"
+dependencies = ["glibc", "glib", "gtk", "libadwaita", "fontconfig", "gsettings-desktop-schemas", "gnome-desktop", "xdg-desktop-portal"]
+
+[[package]]
 name = "libspelling"
 version = "0.4.11"
 status = "built"
@@ -1079,6 +1109,24 @@ status = "built"
 dependencies = ["glibc", "lvm2", "json-c", "openssl", "util-linux", "popt"]
 
 [[package]]
+name = "efivar"
+version = "39"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "efibootmgr"
+version = "18"
+status = "built"
+dependencies = ["glibc", "efivar", "popt"]
+
+[[package]]
+name = "meldra-crypt-initramfs"
+version = "0.1.0"
+status = "built"
+dependencies = ["busybox", "cryptsetup"]
+
+[[package]]
 name = "cups"
 version = "2.4.20"
 status = "built"
@@ -1095,6 +1143,12 @@ name = "gnome-bluetooth"
 version = "47.2"
 status = "built"
 dependencies = ["glibc", "glib", "gtk", "libadwaita", "gsound", "libnotify", "eudev", "upower"]
+
+[[package]]
+name = "bluez"
+version = "5.88"
+status = "built"
+dependencies = ["glibc", "glib", "dbus", "eudev"]
 
 [[package]]
 name = "gnome-control-center"

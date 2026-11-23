@@ -60,7 +60,7 @@ def main() -> int:
             if "DISKREADY" in vm("serial", "test -b /dev/vda && echo DISKREADY", "--timeout", "3", check=False):
                 break
             time.sleep(2)
-        result = vm("serial", f"printf '{PASSWORD}\\n' > /tmp/pw; meldra-install --yes --user tester --hostname "
+        result = vm("serial", f"printf '{PASSWORD}\\n' > /tmp/pw; /usr/sbin/meldra-install --yes --user tester --hostname "
                               "smokebox --password-file /tmp/pw /dev/vda > /tmp/install.log 2>&1; echo EXIT=$?",
                     "--timeout", "400")
         installed = "EXIT=0" in result

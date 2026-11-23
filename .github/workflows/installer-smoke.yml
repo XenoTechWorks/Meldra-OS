@@ -1,0 +1,92 @@
+name: Installer smoke tests
+
+# The assembled GNOME image is currently too large and expensive to build in
+# every workflow. Supply a published image and its digest to test that exact
+# artifact on a clean hosted runner.
+on:
+  workflow_dispatch:
+    inputs:
+      initramfs_url:
+        description: HTTPS URL of meldra-gnome-initramfs.cpio.gz
+        required: true
+        type: string
+      initramfs_sha256:
+        description: SHA-256 digest of the initramfs
+        required: true
+        type: string
+      case:
+        description: Installer matrix to run
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - storage
+          - graphical
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: Install QEMU and UEFI firmware
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
+          # meldra_vm.py uses the QEMU firmware names available on Meldra's
+          # development host. Map Ubuntu's OVMF names to the same interface.
+          if test -f /usr/share/OVMF/OVMF_CODE.fd; then
+            code=/usr/share/OVMF/OVMF_CODE.fd
+            vars=/usr/share/OVMF/OVMF_VARS.fd
+          else
+            code=/usr/share/OVMF/OVMF_CODE_4M.fd
+            vars=/usr/share/OVMF/OVMF_VARS_4M.fd
+          fi
+          test -f "$code" && test -f "$vars"
+          sudo install -D -m 0644 "$code" /usr/share/qemu/edk2-x86_64-code.fd
+          sudo install -D -m 0644 "$vars" /usr/share/qemu/edk2-i386-vars.fd
+          qemu-system-x86_64 --version
+
+      - name: Download and verify the GNOME image
+        env:
+          INITRAMFS_URL: ${{ inputs.initramfs_url }}
+          INITRAMFS_SHA256: ${{ inputs.initramfs_sha256 }}
+        run: |
+          mkdir -p build
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output build/meldra-gnome-initramfs.cpio.gz "$INITRAMFS_URL"
+          printf '%s  %s\n' "$INITRAMFS_SHA256" build/meldra-gnome-initramfs.cpio.gz | sha256sum --check --strict
+          ls -lh build/meldra-gnome-initramfs.cpio.gz
+
+      - name: Run storage installer matrix
+        if: inputs.case == 'all' || inputs.case == 'storage'
+        run: python3 tools/install_storage_smoke.py
+
+      - name: Run graphical installer flow
+        if: inputs.case == 'all' || inputs.case == 'graphical'
+        run: python3 tools/install_gui_smoke.py
+
+      - name: Stop any remaining VM
+        if: always()
+        run: python3 tools/meldra_vm.py stop || true
+
+      - name: Upload installer evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: installer-smoke-evidence
+          path: |
+            build/reports/
+            build/screenshots/
+            build/vm/serial.log
+            build/vm/qemu.log
+          if-no-files-found: warn
+          retention-days: 14

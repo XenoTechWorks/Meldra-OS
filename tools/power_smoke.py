@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
-"""Verify elogind poweroff and reboot requests shut down the Meldra VM."""
+"""Verify elogind suspend/resume, poweroff, and reboot against the Meldra VM."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+
+import meldra_vm
 
 VM = [sys.executable, "tools/meldra_vm.py"]
 
@@ -47,6 +49,43 @@ def exercise(action: str, initrd: Path, timeout: float) -> None:
         vm("stop")
 
 
+def exercise_suspend(initrd: Path, timeout: float) -> None:
+    """Require an actual QEMU S3 pause, wake it, and prove userspace responds again."""
+    started = vm("start", "--initrd", str(initrd), "--memory", "4096", "--cpus", "2")
+    if started.returncode:
+        raise RuntimeError(started.stderr.strip() or started.stdout.strip())
+    try:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if "READY" in vm("serial", "loginctl list-seats >/dev/null 2>&1 && echo READY", "--timeout", "3").stdout:
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError("elogind did not become ready for suspend")
+
+        # The serial command cannot print its completion marker once the guest sleeps; a short timeout is expected.
+        vm("serial", "loginctl suspend", "--timeout", "2")
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            state = meldra_vm.qmp("query-status").get("return", {}).get("status")
+            if state == "suspended":
+                break
+            time.sleep(0.5)
+        else:
+            raise RuntimeError("QEMU never entered the suspended state")
+
+        meldra_vm.qmp("system_wakeup")
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if "RESUMED" in vm("serial", "echo RESUMED", "--timeout", "3").stdout:
+                print("PASS: elogind suspend entered S3 and resumed userspace")
+                return
+            time.sleep(1)
+        raise RuntimeError("guest did not respond after system_wakeup")
+    finally:
+        vm("stop")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--initrd", type=Path, default=Path("build/meldra-gnome-initramfs.cpio.gz"))
@@ -58,6 +97,12 @@ def main() -> int:
         (reports / stale).unlink(missing_ok=True)
     evidence = [f"initrd: {args.initrd}"]
     passed = True
+    try:
+        exercise_suspend(args.initrd, args.timeout)
+        evidence.append("suspend/resume: PASS")
+    except RuntimeError as error:
+        evidence.append(f"suspend/resume: FAIL ({error})")
+        passed = False
     for action in ("poweroff", "reboot"):
         try:
             exercise(action, args.initrd, args.timeout)

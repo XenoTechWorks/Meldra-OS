@@ -59,6 +59,11 @@ class PackageManagerTests(unittest.TestCase):
         helper = self.root / "usr/lib/polkit-1/polkit-agent-helper-1"
         self.assertEqual(helper.stat().st_mode & 0o7777, 0o4755)
 
+    def test_restores_setuid_fuse_mount_helper(self):
+        install(self.setuid_package("fuse3", "root/usr/bin/fusermount3"), self.root)
+        helper = self.root / "usr/bin/fusermount3"
+        self.assertEqual(helper.stat().st_mode & 0o7777, 0o4755)
+
     def test_rejects_setuid_file_not_on_allowlist(self):
         with self.assertRaises(PackageError):
             install(self.setuid_package("hello", "root/usr/bin/hello"), self.root)

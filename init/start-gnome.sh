@@ -6,13 +6,13 @@ export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 export XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP=GNOME
-# No dconf or gvfs yet: keep GSettings in memory and use the plain local VFS.
-export GSETTINGS_BACKEND=memory
+# dconf is the shared, persistent GSettings backend.  Do not force the memory
+# backend here: every process would get its own private settings store, so a
+# wallpaper selected in Settings would never reach GNOME Shell.
 export GIO_USE_VFS=local
 export GIO_USE_VOLUME_MONITOR=unix
-# No accessibility bus yet: without this, waiting for org.a11y.Bus stalls startup for 25 seconds.
-export NO_AT_BRIDGE=1
-export GTK_A11Y=none
+# GTK and GNOME use the packaged AT-SPI D-Bus bridge. org.a11y.Bus is activated
+# on this session bus when the first accessible application connects.
 # Keep the session's messages in the user's home (greetd's terminal is hidden behind the desktop, and
 # $XDG_RUNTIME_DIR is deleted when the session ends, taking any log of a failed start with it).
 log_dir="$HOME/.local/state/meldra"

@@ -77,7 +77,11 @@ Working, checked in QEMU:
   and a WPA2 connection work; real Wi-Fi cards are untested.
 - **Audio:** PipeWire, WirePlumber and pipewire-pulse; GNOME's volume control works, and a test sound played
   through an emulated Intel HDA card was recorded with real signal.
-- polkit, UPower, AccountsService, GeoClue, RealtimeKit, and power off/reboot from the user's session.
+- **Bluetooth:** BlueZ 5.88 and GNOME's Bluetooth panel are integrated, with common USB/UART controller drivers;
+  pairing on physical adapters still needs hardware coverage.
+- **Accessibility and power:** AT-SPI is active for GTK/GNOME applications. elogind power off, reboot, and an
+  ACPI suspend/resume cycle are covered by the QEMU power smoke test.
+- polkit, UPower, AccountsService, GeoClue, and RealtimeKit.
 
 <p align="center">
   <img src="docs/screenshots/gnome-settings.png" width="720" alt="GNOME Settings on Meldra showing the Network panel with a connected wired connection">
@@ -89,17 +93,18 @@ Working, checked in QEMU:
 
 ## Install to disk and log in
 
-The live image has an **Install Meldra** app. It asks for a disk, a user name, a password and a computer name,
-then erases the disk and installs Meldra on it: a GPT disk with an EFI system partition and an ext4 root. The
-kernel boots straight from the firmware through its EFI stub (no bootloader menu); Secure Boot must be off.
-`meldra-install` is the same installer on the command line.
+The live image has an **Install Meldra** app. It asks for a disk, account, computer name, keyboard layout, time
+zone, and optional full-root encryption, then installs Meldra as a UEFI system. Its graphical flow erases the
+chosen disk. The `meldra-install` command also has an expert `--alongside` mode that uses an existing FAT EFI
+partition and a caller-selected root partition without deleting or moving other partitions. Secure Boot must be
+off; encrypted systems ask for their disk password in Meldra's early userspace.
 
 <p align="center">
   <img src="docs/screenshots/meldra-installer.png" width="720" alt="The Install Meldra window asking for a user name, password and computer name">
 </p>
 
-Installed systems start at Meldra's login screen: greetd runs the login form in the cage kiosk compositor and
-starts GNOME after a successful login. (GDM is not used: since GNOME 49 it needs systemd, which Meldra does not use.)
+Installed systems start at ReGreet: greetd runs it in the cage kiosk compositor and starts GNOME after a
+successful login. (GDM is not used: since GNOME 49 it needs systemd, which Meldra does not use.)
 The live image still logs in automatically.
 
 <p align="center">
@@ -107,9 +112,18 @@ The live image still logs in automatically.
 </p>
 
 Checked in QEMU by `tools/install_smoke.py`: install onto a blank disk, boot it with UEFI firmware, reject a wrong
-password, log in with the right one. Files, the host name and the account survive reboots. Not yet: choosing a
-keyboard layout or time zone in the installer, dual-boot next to another system, disk encryption, and testing on
-real hardware.
+password, log in with the right one. Files, the host name and the account survive reboots. Keyboard/time-zone
+selection, encryption, and non-destructive alongside installation are covered by the end-to-end VM matrix but
+still need testing on real hardware.
+
+`tools/install_gui_smoke.py` also launches **Install Meldra** from GNOME's app grid, exercises form validation and
+the erase acknowledgement, completes the graphical installation through polkit, then boots and logs into the
+account created by the UI. `tools/install_storage_smoke.py` covers encrypted, alongside, and encrypted-alongside
+storage layouts while preserving an unrelated sentinel filesystem.
+
+The manual **Installer smoke tests** GitHub Actions workflow runs both matrices against a supplied HTTPS initramfs
+whose SHA-256 digest is verified before QEMU starts. Reports, screenshots, and VM logs are retained as workflow
+artifacts.
 
 ## What works today
 
@@ -124,12 +138,12 @@ real hardware.
 | Text and UI | Built | FreeType, Fontconfig, HarfBuzz, FriBidi, Cairo, Pango |
 | Window manager | Running | Labwc 0.9.1 on virtio-vga in QEMU |
 | Desktop assets | Packaged | Current GNOME backgrounds plus Aqua, Curves, and Sunset |
-| GNOME desktop | Usable preview | Shell 50.6, Settings, Console, Files, Text Editor, NetworkManager, PipeWire; portals remain |
-| Install and login | Working in QEMU | Graphical installer (GPT, EFI stub, ext4), greetd login screen, persistent home |
+| GNOME desktop | Usable preview | Shell 50.6, Settings, Console, Files, Text Editor, NetworkManager, PipeWire, desktop portals |
+| Install and login | Working in QEMU | Installer (UEFI, ext4, optional LUKS2/alongside), ReGreet, persistent home |
 
-Meldra is a developer preview, not yet an installable daily-driver OS. Audio,
-network management, graphical login, a terminal, a panel, and the full GNOME
-session are still being integrated.
+Meldra is an installable developer preview, not yet a daily-driver OS. Broader
+hardware testing, recovery, signed updates, and security/release engineering
+remain before that claim would be responsible.
 
 ## Architecture
 
@@ -188,6 +202,22 @@ For the smaller serial-only smoke test:
 ```sh
 make boot-smoke
 ```
+
+Installer checks require the assembled GNOME initramfs. The aggregate target runs the storage matrix first and
+then drives the graphical installer from GNOME's app grid:
+
+```sh
+make installer-smoke
+
+# Focused runs
+make install-storage-smoke
+make install-gui-smoke
+python3 tools/install_storage_smoke.py --case encrypted-alongside
+```
+
+Generated test disks are removed after each run. Pass `--keep-disks` directly to either Python smoke runner when
+the installed image is needed for debugging; reports remain in `build/reports/` and screenshots in
+`build/screenshots/`.
 
 ## Meldra-owned components
 

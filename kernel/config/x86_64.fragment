@@ -39,6 +39,17 @@ CONFIG_INOTIFY_USER=y
 CONFIG_FANOTIFY=y
 CONFIG_DEBUG_INFO_BTF=n
 
+# --- Power management ---
+# elogind handles the policy and writes the kernel sleep state; ACPI performs
+# the platform transition on PCs. Keep these explicit instead of relying on
+# whichever defaults the next LTS defconfig happens to select.
+CONFIG_PM=y
+CONFIG_PM_SLEEP=y
+CONFIG_SUSPEND=y
+CONFIG_SUSPEND_FREEZER=y
+CONFIG_ACPI=y
+CONFIG_ACPI_SLEEP=y
+
 
 # --- Installed systems (disk boot without an initramfs) ---
 # Storage drivers the root disk may sit behind are built in: the kernel must mount root itself.
@@ -65,6 +76,14 @@ CONFIG_CMDLINE_OVERRIDE=n
 CONFIG_MODULES=y
 CONFIG_MODULE_COMPRESS_NONE=y
 
+# Encrypted installs unlock a LUKS2 root in the installer-supplied initramfs.
+CONFIG_BLK_DEV_DM=y
+CONFIG_DM_CRYPT=y
+CONFIG_CRYPTO_AES=y
+CONFIG_CRYPTO_XTS=y
+CONFIG_CRYPTO_SHA256=y
+CONFIG_CRYPTO_USER_API_SKCIPHER=y
+
 # --- GPU acceleration ---
 CONFIG_DRM_I915=y
 CONFIG_DRM_XE=m
@@ -77,6 +96,8 @@ CONFIG_DRM_NOUVEAU=m
 CONFIG_DRM_VIRTIO_GPU=y
 CONFIG_DRM_SIMPLEDRM=y
 CONFIG_SYSFB_SIMPLEFB=y
+CONFIG_DRM_VBOXVIDEO=m
+CONFIG_DRM_VMWGFX=m
 
 # --- Wi-Fi (modules: their firmware lives on the root filesystem) ---
 CONFIG_WLAN=y
@@ -108,6 +129,30 @@ CONFIG_R8169=y
 CONFIG_IGB=y
 CONFIG_IGC=y
 CONFIG_E1000E=y
+
+# --- Bluetooth ---
+# Laptop UART controllers are commonly described through serdev/GPIO rather
+# than USB. These prerequisites make the vendor HCI UART selections effective.
+CONFIG_GPIOLIB=y
+CONFIG_SERIAL_DEV_BUS=y
+CONFIG_SERIAL_DEV_CTRL_TTYPORT=y
+CONFIG_BT=m
+CONFIG_BT_BREDR=y
+CONFIG_BT_RFCOMM=m
+CONFIG_BT_RFCOMM_TTY=y
+CONFIG_BT_BNEP=m
+CONFIG_BT_HIDP=m
+CONFIG_BT_LE=y
+CONFIG_BT_HCIBTUSB=m
+CONFIG_BT_HCIBTUSB_AUTOSUSPEND=y
+CONFIG_BT_HCIUART=m
+CONFIG_BT_HCIUART_INTEL=y
+CONFIG_BT_HCIUART_BCM=y
+CONFIG_BT_HCIUART_QCA=y
+CONFIG_BT_INTEL=m
+CONFIG_BT_BCM=m
+CONFIG_BT_RTL=m
+CONFIG_BT_QCA=m
 
 # --- Audio ---
 CONFIG_SOUND=y

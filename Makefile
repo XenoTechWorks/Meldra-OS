@@ -1,4 +1,4 @@
-.PHONY: all check test audit sources kernel-config kernel glibc init packages graphics-packages desktop-libs fonts xkeyboard-config labwc gnome-backgrounds gnome-classics rootfs desktop-rootfs desktop-initramfs desktop-preview gnome-iso gnome-power-smoke install-smoke initramfs boot-smoke labwc-plan gnome-plan status clean
+.PHONY: all check test audit sources kernel-config kernel glibc init packages graphics-packages desktop-libs fonts xkeyboard-config labwc gnome-backgrounds gnome-classics rootfs desktop-rootfs desktop-initramfs desktop-preview gnome-iso gnome-power-smoke install-smoke install-storage-smoke install-gui-smoke installer-smoke initramfs boot-smoke labwc-plan gnome-plan status clean
 
 BUSYBOX ?= build/host-src/busybox-1.36.1/busybox
 
@@ -82,6 +82,16 @@ gnome-power-smoke:
 
 install-smoke:
 	python3 tools/install_smoke.py
+
+install-storage-smoke:
+	python3 tools/install_storage_smoke.py
+
+install-gui-smoke:
+	python3 tools/install_gui_smoke.py
+
+installer-smoke:
+	$(MAKE) install-storage-smoke
+	$(MAKE) install-gui-smoke
 
 status:
 	python3 tools/readiness.py

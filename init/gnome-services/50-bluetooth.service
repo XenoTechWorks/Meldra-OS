@@ -1,0 +1,2 @@
+command=while [ ! -S /run/dbus/system_bus_socket ]; do /bin/sleep 0.2; done; /bin/mkdir -p /var/lib/bluetooth; /usr/sbin/modprobe bluetooth || true; while true; do /usr/libexec/bluetooth/bluetoothd --nodetach; /bin/sleep 2; done
+respawn=no

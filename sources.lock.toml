@@ -692,6 +692,12 @@ url = "https://github.com/dosfstools/dosfstools/releases/download/v4.2/dosfstool
 sha256 = "64926eebf90092dca21b14259a5301b7b98e7b1943e8a201c7d726084809b527"
 role = "mkfs.vfat for the installer's EFI system partition; matches Debian's orig tarball digest"
 
+[gnome.tzdata]
+version = "2026f"
+url = "https://data.iana.org/time-zones/releases/tzdata2026f.tar.gz"
+sha256 = "01b4a91cec5167ed48c11e8ab78f2048cead78ce94b0cafcad0ae8c5a3044d3d"
+role = "IANA time-zone rules used by the installer and desktop clock"
+
 [gnome.e2fsprogs]
 version = "1.47.4"
 url = "https://mirrors.edge.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v1.47.4/e2fsprogs-1.47.4.tar.xz"
@@ -703,6 +709,13 @@ version = "0.10.3"
 url = "https://git.sr.ht/~kennylevinsen/greetd/archive/0.10.3.tar.gz"
 sha256 = "ee5cb70e0add4ca9c9fe57e47581ab0002d44c07743fb5492469f3b570db640b"
 role = "login daemon (PAM, sessions); sha512 matches Alpine's APKBUILD; crates are verified by Cargo.lock"
+
+[gnome.regreet]
+version = "0.5.0"
+url = "https://github.com/rharish101/ReGreet/archive/refs/tags/0.5.0.tar.gz"
+sha256 = "7e26799dffdede183fc62d12aedbda5fea92d7d9802a180755d8a1d1fd93f2f7"
+file = "ReGreet-0.5.0.tar.gz"
+role = "GTK login UI for greetd; crates are verified by Cargo.lock"
 
 [gnome.cage]
 version = "0.2.1"
@@ -941,6 +954,25 @@ version = "0.11.0"
 url = "https://github.com/flatpak/libportal/releases/download/0.11.0/libportal-0.11.0.tar.xz"
 sha256 = "abb9e452a1c372133bd3eb8f0bb30d07b2d0a8fb02001c4155cf287555db4040"
 role = "portal client library for Files; GitHub-recorded digest"
+
+[gnome.fuse3]
+version = "3.18.3"
+url = "https://github.com/libfuse/libfuse/archive/refs/tags/fuse-3.18.3.tar.gz"
+sha256 = "a26f46edc8db4e2cbf1b46d36d3e18ea208871671e56434d9ceb8f7887a690d2"
+file = "fuse-3.18.3.tar.gz"
+role = "FUSE library and mount helper for the desktop document portal"
+
+[gnome.xdg_desktop_portal]
+version = "1.22.1"
+url = "https://github.com/flatpak/xdg-desktop-portal/releases/download/1.22.1/xdg-desktop-portal-1.22.1.tar.xz"
+sha256 = "d4879ddb3d65ff1a8f19187497e6f13dc5d267bcac404a5d501218be355753d3"
+role = "desktop portal frontend; upstream GitHub release includes 2026 security fixes"
+
+[gnome.xdg_desktop_portal_gnome]
+version = "50.0"
+url = "https://download.gnome.org/sources/xdg-desktop-portal-gnome/50/xdg-desktop-portal-gnome-50.0.tar.xz"
+sha256 = "ceeef2fb68b34b3f66a3def0a332a22a70af272641fb6c50065b7a2fde3d5759"
+role = "GNOME portal backend; checksum verified against the GNOME release"
 
 [gnome.gstreamer]
 version = "1.28.9"
@@ -1197,6 +1229,26 @@ version = "1.6.3"
 url = "https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/keyutils.git/snapshot/keyutils-1.6.3.tar.gz"
 sha256 = "a61d5706136ae4c05bd48f86186bcfdbd88dd8bd5107e3e195c924cfc1b39bb4"
 role = "kernel key retention library for libblockdev's crypto plugin; sha512 matches Alpine's APKBUILD"
+
+[gnome.efivar]
+version = "39"
+url = "https://github.com/rhboot/efivar/archive/refs/tags/39.tar.gz"
+sha256 = "c9edd15f2eeeea63232f3e669a48e992c7be9aff57ee22672ac31f5eca1609a6"
+file = "efivar-39.tar.gz"
+role = "UEFI variable and device-path libraries for registering Meldra's boot entry"
+
+[gnome.efibootmgr]
+version = "18"
+url = "https://github.com/rhboot/efibootmgr/releases/download/18/efibootmgr-18.tar.bz2"
+sha256 = "2b195f912aa353f0d11f21f207684c91460fbc37f9a4f2673e63e5e32d108b10"
+role = "UEFI boot-entry manager used by the installer"
+
+[gnome.bluez]
+version = "5.88"
+url = "https://github.com/bluez/bluez/archive/refs/tags/5.88.tar.gz"
+sha256 = "667203f5dba91cf8b2094239dd9b415b487146cb00d4653179c11723dce52f19"
+file = "bluez-5.88.tar.gz"
+role = "Linux Bluetooth daemon and D-Bus API; official BlueZ release tag"
 
 [gnome.libjxl]
 version = "0.12.0"

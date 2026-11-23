@@ -5,7 +5,7 @@
   <vendor>Meldra OS</vendor>
   <action id="org.meldra.installer">
     <description>Install Meldra on a disk</description>
-    <message>Installing Meldra erases the chosen disk and needs administrator permission.</message>
+    <message>Installing Meldra changes storage and needs administrator permission.</message>
     <icon_name>drive-harddisk</icon_name>
     <defaults>
       <allow_any>no</allow_any>

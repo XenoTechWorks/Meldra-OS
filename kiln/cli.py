@@ -53,13 +53,21 @@ def build(source: Path, output: Path | None = None) -> str:
         raise PackageError("manifest needs package.name and package.version")
     output = output or Path(f"{name}-{version}.kiln")
     output.parent.mkdir(parents=True, exist_ok=True)
+    def preserve_audited_privilege(info: tarfile.TarInfo) -> tarfile.TarInfo:
+        # Some staging/install tools normalize modes to 0755.  The package name
+        # and exact path must still match the same narrow allowlist enforced at
+        # install time before Kiln records a privileged helper in the archive.
+        if (name, info.name) in SETUID_ALLOWLIST:
+            info.mode |= 0o4000
+        return info
     with tarfile.open(output, "w:gz", format=tarfile.PAX_FORMAT) as archive:
         archive.add(manifest_path, arcname="KILN.toml", recursive=False)
         for path in sorted(payload.rglob("*")):
             # Installs refuse hard links, so never write any: forgetting the inodes seen so far makes tarfile
             # store every hard-linked file as a full copy (build systems such as e2fsprogs' create them).
             archive.inodes = {}
-            archive.add(path, arcname=str(Path("root") / path.relative_to(payload)), recursive=False)
+            archive.add(path, arcname=str(Path("root") / path.relative_to(payload)), recursive=False,
+                        filter=preserve_audited_privilege)
     return f"built {output} ({_digest(output)})"
 
 
@@ -69,6 +77,7 @@ SETUID_ALLOWLIST = frozenset({
     ("polkit", "root/usr/lib/polkit-1/polkit-agent-helper-1"),   # authenticates the user for polkit agents
     ("dbus", "root/usr/libexec/dbus-daemon-launch-helper"),       # starts system bus services on demand
     ("polkit", "root/usr/bin/pkexec"),                            # runs one program as root once polkit agrees
+    ("fuse3", "root/usr/bin/fusermount3"),                       # mounts document-portal FUSE filesystems
 })
 
 

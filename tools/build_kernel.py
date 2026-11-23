@@ -17,12 +17,35 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import tomllib
 
 
 def run(command: list[str], *, cwd: Path | None = None) -> None:
     print("+", " ".join(command), flush=True)
     subprocess.run(command, cwd=cwd, check=True)
+
+
+def packaged_depmod(packages: Path, stage: Path, release: str) -> bool:
+    """Run Meldra's pinned kmod when the build host does not provide depmod."""
+    candidates = {name: sorted(packages.glob(f"{name}-*.kiln"), key=lambda path: path.stat().st_mtime)
+                  for name in ("glibc", "kmod")}
+    if not all(candidates.values()):
+        return False
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from kiln.cli import install
+    with tempfile.TemporaryDirectory(prefix="meldra-depmod-") as temporary:
+        root = Path(temporary)
+        install(candidates["glibc"][-1], root)
+        install(candidates["kmod"][-1], root)
+        loader = root / "lib64/ld-linux-x86-64.so.2"
+        depmod = root / "usr/sbin/depmod"
+        if not loader.is_file() or not depmod.exists():
+            return False
+        libraries = ":".join(str(root / path) for path in ("lib64", "usr/lib64", "usr/lib"))
+        run([str(loader), "--library-path", libraries, str(depmod), "-b", str(stage), release])
+    return True
 
 
 def package_kernel(source: Path, output: Path, packages: Path, version: str) -> None:
@@ -50,11 +73,12 @@ def package_kernel(source: Path, output: Path, packages: Path, version: str) -> 
     tree = stage / "usr/lib/modules" / release
     for link in ("build", "source"):
         (tree / link).unlink(missing_ok=True)
-    # depmod from the build host writes the indexes for the target tree (module format is host-independent).
+    # Prefer the host tool, but keep kernel packaging reproducible on minimal hosts by falling back to Meldra's
+    # already-pinned kmod package through its own loader. Module metadata is architecture data, not host ABI.
     if shutil.which("depmod") or Path("/sbin/depmod").exists():
-        run([shutil.which("depmod") or "/sbin/depmod", "-b", str(stage / "usr"), release])
-    else:
-        raise RuntimeError("depmod (kmod) is required to index the modules")
+        run([shutil.which("depmod") or "/sbin/depmod", "-b", str(stage), release])
+    elif not packaged_depmod(packages, stage, release):
+        raise RuntimeError("depmod is required: install host kmod or build the glibc and kmod Kiln packages")
     if not (tree / "modules.dep").is_file():
         raise RuntimeError("modules.dep was not written")
     write_manifest(modules / "KILN.toml", "linux-modules", version, ())

@@ -30,18 +30,21 @@ from tools.assemble_rootfs import dependency_order, package_manifest, write_base
 # Packages the session runs directly; everything they depend on comes along.
 ROOTS = (
     "hearth", "busybox", "kiln", "eudev", "dbus", "elogind", "linux-pam", "meldra-session",
-    "gnome-shell", "gnome-backgrounds", "gnome-classic-favorites", "dejavu-fonts", "xkeyboard-config",
+    "gnome-shell", "gnome-backgrounds", "gnome-classic-favorites", "dejavu-fonts", "xkeyboard-config", "tzdata",
     "gsettings-desktop-schemas", "gcc-runtime", "glycin", "gi-typelibs", "accountsservice", "gdm", "dconf",
     "librsvg", "upower", "geoclue", "geocode-glib", "libgweather", "ibus", "gnome-settings-daemon",
     "bubblewrap", "adwaita-icon-theme", "hicolor-icon-theme", "foot", "rtkit", "meldra-desktop-apps",
-    "linux", "linux-modules", "meldra-installer", "meldra-greeter",
+    "linux", "linux-modules", "meldra-installer", "meldra-greeter", "regreet", "efibootmgr",
+    "meldra-crypt-initramfs",
     # A real shell for the terminal: bash and the GNU/procps tools (busybox remains /bin/sh for system scripts).
     "bash", "coreutils", "grep", "sed", "findutils", "gawk", "diffutils", "less", "procps-ng", "fastfetch",
     # Drivers and firmware (modules load through eudev + kmod), GPU acceleration, Wi-Fi, audio.
     "kmod", "linux-firmware", "wireless-regdb", "mesa", "vulkan-loader", "networkmanager", "wpa-supplicant", "pipewire",
-    "wireplumber",
+    "wireplumber", "bluez",
     # Real GNOME apps.
     "gnome-console", "gnome-text-editor", "nautilus", "gnome-control-center", "udisks", "meldra-backgrounds", "shared-mime-info", "nautilus",
+    # Desktop integration used by sandboxed and portal-aware applications.
+    "xdg-desktop-portal", "xdg-desktop-portal-gnome",
 )
 
 PASSWD = (
@@ -192,6 +195,8 @@ def main() -> int:
     (etc / "group").write_text(GROUP, encoding="utf-8")
     (etc / "machine-id").write_text(uuid.uuid4().hex + "\n", encoding="utf-8")
     (etc / "hostname").write_text("meldra\n", encoding="utf-8")
+    (etc / "localtime").symlink_to("../usr/share/zoneinfo/UTC")
+    (etc / "timezone").write_text("UTC\n", encoding="utf-8")
     # Login shells; pkexec refuses to run for a user whose shell is not listed here.
     (etc / "shells").write_text("/bin/sh\n/bin/ash\n/bin/bash\n/usr/bin/bash\n", encoding="utf-8")
     shutil.copy2("init/shell/profile", etc / "profile")

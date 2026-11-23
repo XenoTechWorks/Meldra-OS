@@ -18,7 +18,7 @@
 typedef struct {
     GtkWidget *window, *stack;
     GtkWidget *disks, *disk_note;
-    GtkWidget *user, *password, *again, *hostname, *account_note;
+    GtkWidget *user, *password, *again, *hostname, *keyboard, *timezone, *encrypt, *account_note;
     GtkWidget *summary, *erase_check, *install_button;
     GtkWidget *progress, *progress_label;
     GtkWidget *done_title, *done_text, *restart, *try_again;
@@ -128,6 +128,11 @@ static const char *chosen_device(Installer *app, const char *key) {
 
 static void go(Installer *app, const char *name) { gtk_stack_set_visible_child_name(GTK_STACK(app->stack), name); }
 
+static const char *selected_string(GtkWidget *dropdown) {
+    gpointer item = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(dropdown));
+    return item ? gtk_string_object_get_string(GTK_STRING_OBJECT(item)) : "";
+}
+
 static void to_disks(GtkButton *b, gpointer data) { (void)b; load_disks(data); go(data, "disks"); }
 static void to_welcome(GtkButton *b, gpointer data) { (void)b; go(data, "welcome"); }
 
@@ -169,9 +174,12 @@ static void to_confirm(GtkButton *b, gpointer data) {
         return;
     }
     gtk_label_set_text(GTK_LABEL(app->account_note), "");
-    char *text = g_strdup_printf("Meldra will be installed on:\n\n    %s (%s)\n\nAccount: %s    Computer name: %s\n\n"
+    char *text = g_strdup_printf("Meldra will be installed on:\n\n    %s (%s)\n\nAccount: %s    Computer name: %s\n"
+                                 "Keyboard: %s    Time zone: %s    Encryption: %s\n\n"
                                  "ALL DATA ON THIS DISK WILL BE ERASED.",
-                                 chosen_device(app, "label"), chosen_device(app, "device"), user, host);
+                                 chosen_device(app, "label"), chosen_device(app, "device"), user, host,
+                                 selected_string(app->keyboard), selected_string(app->timezone),
+                                 gtk_check_button_get_active(GTK_CHECK_BUTTON(app->encrypt)) ? "On" : "Off");
     gtk_label_set_text(GTK_LABEL(app->summary), text);
     g_free(text);
     gtk_check_button_set_active(GTK_CHECK_BUTTON(app->erase_check), FALSE);
@@ -282,11 +290,21 @@ static void install(GtkButton *b, gpointer data) {
     gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(app->progress), 0);
     gtk_label_set_text(GTK_LABEL(app->progress_label), "Waiting for permission");
     go(app, "progress");
-    GSubprocess *process = g_subprocess_new(
-        G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE, &error, "pkexec", INSTALLER, "--yes",
-        "--user", gtk_editable_get_text(GTK_EDITABLE(app->user)),
-        "--hostname", gtk_editable_get_text(GTK_EDITABLE(app->hostname)),
-        "--password-file", app->password_file, chosen_device(app, "device"), NULL);
+    GPtrArray *arguments = g_ptr_array_new();
+    const char *fixed[] = {"pkexec", INSTALLER, "--yes", "--user",
+                           gtk_editable_get_text(GTK_EDITABLE(app->user)), "--hostname",
+                           gtk_editable_get_text(GTK_EDITABLE(app->hostname)), "--keyboard-layout",
+                           selected_string(app->keyboard), "--timezone", selected_string(app->timezone),
+                           "--password-file", app->password_file, NULL};
+    for (int i = 0; fixed[i]; i++) g_ptr_array_add(arguments, (gpointer)fixed[i]);
+    if (gtk_check_button_get_active(GTK_CHECK_BUTTON(app->encrypt)))
+        g_ptr_array_add(arguments, "--encrypt");
+    g_ptr_array_add(arguments, (gpointer)chosen_device(app, "device"));
+    g_ptr_array_add(arguments, NULL);
+    GSubprocess *process = g_subprocess_newv(
+        (const gchar *const *)arguments->pdata,
+        G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE, &error);
+    g_ptr_array_free(arguments, TRUE);
     if (!process) {
         finished(app, FALSE, error->message);
         g_clear_error(&error);
@@ -369,6 +387,13 @@ static void activate(GtkApplication *gtk_app, gpointer data) {
     app->password = entry("Password", TRUE);
     app->again = entry("Password again", TRUE);
     app->hostname = entry("Computer name", FALSE);
+    const char *layouts[] = {"us", "gb", "de", "fr", "es", "it", "br", "jp", NULL};
+    const char *timezones[] = {"UTC", "America/New_York", "America/Chicago", "America/Denver",
+                               "America/Los_Angeles", "Europe/London", "Europe/Berlin", "Europe/Paris",
+                               "Asia/Tokyo", "Asia/Kolkata", "Australia/Sydney", NULL};
+    app->keyboard = gtk_drop_down_new_from_strings(layouts);
+    app->timezone = gtk_drop_down_new_from_strings(timezones);
+    app->encrypt = gtk_check_button_new_with_label("Encrypt the Meldra system (password required at startup)");
     gtk_editable_set_text(GTK_EDITABLE(app->hostname), "meldra");
     app->account_note = gtk_label_new("");
     gtk_label_set_xalign(GTK_LABEL(app->account_note), 0);
@@ -379,6 +404,11 @@ static void activate(GtkApplication *gtk_app, gpointer data) {
     gtk_box_append(GTK_BOX(account), app->again);
     gtk_box_append(GTK_BOX(account), field_label("Computer name (how this computer appears on the network)"));
     gtk_box_append(GTK_BOX(account), app->hostname);
+    gtk_box_append(GTK_BOX(account), field_label("Keyboard layout"));
+    gtk_box_append(GTK_BOX(account), app->keyboard);
+    gtk_box_append(GTK_BOX(account), field_label("Time zone"));
+    gtk_box_append(GTK_BOX(account), app->timezone);
+    gtk_box_append(GTK_BOX(account), app->encrypt);
     gtk_box_append(GTK_BOX(account), app->account_note);
     gtk_box_append(GTK_BOX(account), buttons(button("Back", FALSE, G_CALLBACK(to_disks_back), app),
                                              button("Continue", TRUE, G_CALLBACK(to_confirm), app)));

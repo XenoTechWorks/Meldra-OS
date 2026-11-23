@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import tarfile
 import tempfile
 import tomllib
 
@@ -30,7 +31,7 @@ from tools.build_graphics_packages import manifest, python_wheel, require_glibc_
 import tools.build_desktop_libraries as desktop
 
 
-OWNED = {"meldra-session": "0.1.0", "meldra-backgrounds": "0.1.0", "meldra-desktop-apps": "0.1.0", "meldra-installer": "0.1.0", "meldra-greeter": "0.1.0",
+OWNED = {"meldra-session": "0.1.0", "meldra-backgrounds": "0.1.0", "meldra-desktop-apps": "0.1.0", "meldra-installer": "0.1.0", "meldra-greeter": "0.1.0", "meldra-crypt-initramfs": "0.1.0",
          "gi-typelibs": "1.86.0"}   # built from this repository, so there is no upstream pin
 
 
@@ -128,6 +129,8 @@ def introspection_cross_file(original):
 def meson_data_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
     """Meson package with no shared library (schemas, data files): no ELF check, `expect` must exist."""
     original = desktop.cross_file
+    if pkg.target_tools:
+        desktop.cross_file = target_tool_wrappers(pkg)(desktop.cross_file)
     if pkg.rust:
         desktop.cross_file = rust_cross_file(desktop.cross_file)
     if pkg.introspect:
@@ -282,6 +285,12 @@ def glycin_without_core(stage: Path, upstream: Path, build_dir: Path) -> None:
                     "usr/lib/girepository-1.0/Gly-2.typelib", "usr/share/gir-1.0/Gly-2.gir"):
         for path in stage.glob(pattern):
             shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink()
+
+
+def fuse3_post(stage: Path, upstream: Path, build_dir: Path) -> None:
+    """The document portal mounts its FUSE filesystem as the desktop user."""
+    del upstream, build_dir
+    (stage / "usr/bin/fusermount3").chmod(0o4755)
 
 
 def bash_post(stage: Path, upstream: Path, build_dir: Path) -> None:
@@ -746,6 +755,155 @@ def greetd_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path
         subprocess.run(["strip", "--strip-unneeded", str(stage / target)], check=True)
         require_glibc_elf(stage / target)
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def regreet_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """ReGreet: cross-build the locked Rust graph and install Meldra's theme/session declaration."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    plain = unit / "plain-cross.ini"
+    plain.write_text("[binaries]\n[properties]\n", encoding="utf-8")
+    rust_cross_file(lambda _work, _sysroot: plain)(unit, sysroot)
+    env = {
+        **os.environ,
+        "CARGO_TARGET_DIR": str(unit / "target"),
+        "GREETD_CONFIG_DIR": "/etc/greetd",
+        "STATE_DIR": "/var/lib/regreet",
+        "LOG_DIR": "/var/log/regreet",
+        "REBOOT_CMD": "/usr/bin/loginctl reboot",
+        "POWEROFF_CMD": "/usr/bin/loginctl poweroff",
+        "RUSTFLAGS": f"--remap-path-prefix={upstream}=. --remap-path-prefix={Path.home()}=~",
+    }
+    subprocess.run(["cargo", "build", "--release", "--locked", "--target", RUST_TARGET,
+                    "-j", os.environ.get("MELDRA_JOBS", "2")], cwd=upstream, env=env, check=True)
+    stage = unit / "package/root"
+    binary = stage / "usr/bin/regreet"
+    binary.parent.mkdir(parents=True)
+    shutil.copy2(unit / "target" / RUST_TARGET / "release/regreet", binary)
+    subprocess.run(["strip", "--strip-unneeded", str(binary)], check=True)
+    require_glibc_elf(binary)
+    config = stage / "etc/greetd"
+    config.mkdir(parents=True)
+    shutil.copy2("init/greetd/regreet.toml", config / "regreet.toml")
+    shutil.copy2("init/greetd/regreet.css", config / "regreet.css")
+    sessions = stage / "usr/share/wayland-sessions"
+    sessions.mkdir(parents=True)
+    (sessions / "meldra.desktop").write_text(
+        "[Desktop Entry]\nName=Meldra OS\nComment=GNOME on Meldra OS\n"
+        "Exec=/usr/libexec/meldra/start-gnome\nType=Application\nDesktopNames=GNOME\n",
+        encoding="utf-8",
+    )
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def tzdata_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Compile IANA's flat source archive with the target glibc's zic."""
+    import hashlib
+    import urllib.request
+
+    archive = cache / Path(lock["url"]).name
+    cache.mkdir(parents=True, exist_ok=True)
+    if not archive.is_file():
+        temporary = archive.with_suffix(".part")
+        with urllib.request.urlopen(lock["url"], timeout=60) as response, temporary.open("wb") as stream:
+            shutil.copyfileobj(response, stream)
+        temporary.replace(archive)
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != lock["sha256"]:
+        raise RuntimeError(f"checksum mismatch: {archive}")
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = unit / "source"
+    upstream.mkdir()
+    with tarfile.open(archive) as bundle:
+        for member in bundle.getmembers():
+            path = Path(member.name)
+            if path.is_absolute() or ".." in path.parts:
+                raise RuntimeError(f"unsafe tzdata member: {member.name}")
+        bundle.extractall(upstream, filter="data")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    zones = stage / "usr/share/zoneinfo"
+    zones.mkdir(parents=True)
+    loader = root / "lib64/ld-linux-x86-64.so.2"
+    zic = root / "usr/sbin/zic"
+    subprocess.run([str(loader), "--library-path", f"{root}/lib64:{root}/usr/lib64:{root}/usr/lib",
+                    str(zic), "-b", "fat", "-d", str(zones),
+                    *[str(upstream / name) for name in ("africa", "antarctica", "asia", "australasia",
+                                                        "europe", "northamerica", "southamerica", "etcetera",
+                                                        "factory", "backward")]], check=True)
+    (zones / "posixrules").symlink_to("America/New_York")
+    for name in ("iso3166.tab", "zone.tab", "zone1970.tab", "leapseconds", "tzdata.zi"):
+        if (upstream / name).is_file():
+            shutil.copy2(upstream / name, zones / name)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def efivar_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    common = [f"CC=gcc --sysroot={root}", "HOSTCC=gcc", "prefix=/usr", "libdir=/usr/lib",
+              "LIBDIR=/usr/lib", "PCDIR=/usr/lib/pkgconfig", "ENABLE_DOCS=0",
+              "CFLAGS=-O2 -Wno-error=discarded-qualifiers",
+              f"LDFLAGS=-Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64"]
+    subprocess.run(["make", f"-j{os.environ.get('MELDRA_JOBS', '2')}", *common], cwd=upstream, check=True)
+    subprocess.run(["make", *common, f"DESTDIR={stage}", "install"], cwd=upstream, check=True)
+    require_glibc_elf(stage / "usr/lib/libefivar.so.1.39")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def efibootmgr_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    stage = unit / "package/root"
+    env = {**os.environ, "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"}
+    common = [f"CC=gcc --sysroot={root}", "EFIDIR=Meldra", "EFI_LOADER=meldra.efi", "prefix=/usr",
+              "libdir=/usr/lib", f"EXTRAINCDIRS={root}/usr/include", f"EXTRALIBDIRS={root}/usr/lib",
+              f"LDFLAGS=-Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64"]
+    subprocess.run(["make", f"-j{os.environ.get('MELDRA_JOBS', '2')}", *common], cwd=upstream, env=env, check=True)
+    subprocess.run(["make", *common, f"DESTDIR={stage}", "install"], cwd=upstream, env=env, check=True)
+    require_glibc_elf(stage / "usr/sbin/efibootmgr")
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def meldra_crypt_initramfs_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """Early userspace that unlocks an optional LUKS root before Hearth starts."""
+    del cache
+    unit = work / pkg.name
+    unit.mkdir()
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    initroot = unit / "initroot"
+    shutil.copytree(sysroot, initroot, symlinks=True)
+    for relative in ("usr/include", "usr/share", "usr/lib/pkgconfig", "usr/lib64/gconv"):
+        path = initroot / relative
+        if path.exists():
+            shutil.rmtree(path)
+    for archive in initroot.rglob("*.a"):
+        archive.unlink()
+    (initroot / "dev").mkdir(exist_ok=True)
+    (initroot / "proc").mkdir(exist_ok=True)
+    (initroot / "sys").mkdir(exist_ok=True)
+    (initroot / "run/cryptsetup").mkdir(parents=True, exist_ok=True)
+    (initroot / "newroot").mkdir(exist_ok=True)
+    init = initroot / "init"
+    shutil.copy2("init/crypt-root-init.sh", init)
+    init.chmod(0o755)
+    stage = unit / "package/root/usr/lib/meldra"
+    stage.mkdir(parents=True)
+    subprocess.run([sys.executable, "tools/pack_rootfs.py", "--root", str(initroot),
+                    "--output", str(stage / "crypt-root-initramfs.img")], check=True)
+    build(manifest(stage.parents[2], pkg.name, lock["version"], pkg.deps),
+          output / f"{pkg.name}-{lock['version']}.kiln")
 
 
 def lz4_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
@@ -1659,6 +1817,8 @@ PACKAGES = [
         pattern="libseat.so.1*",
     ),
     Package("greetd", ("glibc", "linux-pam"), kind="custom"),
+    Package("tzdata", ("glibc",), kind="custom"),
+    Package("efivar", ("glibc",), kind="custom"),
     Package(
         "cage", ("glibc", "wlroots", "libdrm", "libffi", "expat", "wayland", "wayland-protocols", "mesa",
                  "libxkbcommon", "eudev", "libevdev", "mtdev", "libinput", "pixman", "seatd", "libdisplay-info"),
@@ -1667,7 +1827,8 @@ PACKAGES = [
     Package("meldra-greeter", ("glibc", "glib", "gtk", "json-glib", "greetd", "cage", "seatd", "linux-pam",
                                "elogind"), kind="custom"),
     Package("meldra-installer", ("busybox", "util-linux", "e2fsprogs", "dosfstools", "linux", "polkit", "glibc",
-                                 "glib", "gtk", "json-glib"), kind="custom"),
+                                 "glib", "gtk", "json-glib", "efibootmgr", "cryptsetup",
+                                 "meldra-crypt-initramfs", "tzdata", "xkeyboard-config"), kind="custom"),
     Package("meldra-desktop-apps", ("glibc", "glib", "gtk"), kind="custom"),
     Package("gi-typelibs", ("glibc", "glib"), kind="custom"),
     Package(
@@ -1921,6 +2082,15 @@ PACKAGES = [
     Package("gnome-bluetooth", ("glibc", "glib", "gtk", "libadwaita", "gsound", "libnotify", "eudev", "upower"),
             introspect=True, options=("-Dsendto=false", "-Dgtk_doc=false", "-Dintrospection=true"),
             pattern="libgnome-bluetooth-ui-3.0.so.13*"),
+    Package("bluez", ("glibc", "glib", "dbus", "eudev"), kind="cross-autotools",
+            options=("--disable-static", "--disable-client", "--disable-tools", "--disable-monitor",
+                     "--disable-obex", "--disable-cups", "--disable-manpages", "--disable-systemd",
+                     "--disable-mesh", "--disable-midi", "--disable-testing",
+                     "--disable-sixaxis", "--disable-hid2hci", "--enable-udev", "--with-udevdir=/usr/lib/udev",
+                     "--with-dbusconfdir=/usr/share", "--with-dbussystembusdir=/usr/share/dbus-1/system-services",
+                     "--with-dbussessionbusdir=/usr/share/dbus-1/services", "--sysconfdir=/etc",
+                     "--localstatedir=/var", "--libdir=/usr/lib"),
+            pattern="usr/libexec/bluetooth/bluetoothd"),
     Package("librest", ("glibc", "glib", "libsoup", "libxml2", "json-glib"), introspect=True,
             options=("-Dsoup2=false", "-Dexamples=false", "-Dtests=false", "-Dgtk_doc=false", "-Dvapi=false",
                      "-Dintrospection=true", "-Dca_certificates=true", "-Dca_certificates_path=/etc/ssl/certs/ca-certificates.crt"),
@@ -1964,10 +2134,12 @@ PACKAGES = [
             "--libdir=/usr/lib"), pattern="usr/lib/libpopt.so.0"),
     Package("cryptsetup", ("glibc", "lvm2", "json-c", "openssl", "util-linux", "popt"), kind="cross-autotools",
             options=("--disable-static", "--disable-asciidoc", "--disable-ssh-token", "--disable-external-tokens",
-                     "--disable-cryptsetup", "--disable-veritysetup", "--disable-integritysetup",
+                     "--disable-veritysetup", "--disable-integritysetup",
                      "--disable-selinux", "--disable-nls", "--with-crypto_backend=openssl", "--libdir=/usr/lib",
                      "--with-tmpfilesdir=no"),
             pattern="usr/lib/libcryptsetup.so.12"),
+    Package("efibootmgr", ("glibc", "efivar", "popt"), kind="custom"),
+    Package("meldra-crypt-initramfs", ("busybox", "cryptsetup"), kind="custom"),
     Package("keyutils", ("glibc",), kind="custom"),
     Package("libblockdev", ("glibc", "glib", "eudev", "kmod", "cryptsetup", "lvm2", "util-linux", "e2fsprogs",
                             "libbytesize", "libnvme", "keyutils"), introspect=True, kind="cross-autotools",
@@ -2158,16 +2330,38 @@ PACKAGES = [
                      "-Dbackend-qt6=disabled", "-Dintrospection=false", "-Dvapi=false", "-Ddocs=false",
                      "-Dtests=false"),
             pattern="libportal.so.1*"),
+    Package("fuse3", ("glibc",), kind="data", post=fuse3_post,
+            options=("-Dexamples=false", "-Dtests=false", "-Dutils=true", "-Duseroot=false",
+                     "-Dinitscriptdir=", "-Ddisable-mtab=true", "-Denable-io-uring=false"),
+            pattern="usr/bin/fusermount3"),
     Package("gstreamer", ("glibc", "glib"),
             options=("-Dintrospection=disabled", "-Dtests=disabled", "-Dexamples=disabled", "-Ddoc=disabled",
                      "-Dbenchmarks=disabled", "-Dlibunwind=disabled", "-Dlibdw=disabled", "-Dbash-completion=disabled",
                      "-Dnls=disabled", "-Dptp-helper=disabled", "-Dcheck=enabled", "-Dtools=enabled"),
             pattern="libgstreamer-1.0.so.0*"),
+    # ReGreet needs AccountsService and the image/video background stack at runtime. Keep it here so a clean
+    # --all build has already produced every dependency named in its Kiln manifest.
+    Package("regreet", ("glibc", "glib", "gtk", "glycin", "gstreamer", "accountsservice", "dbus",
+                         "greetd", "cage", "elogind"), kind="custom"),
     Package("gst-plugins-base", ("glibc", "glib", "gstreamer", "zlib"),
             # Only the libraries Files needs (pbutils, tag, ...); optional plugins and their dependencies are off.
             options=("-Dauto_features=disabled", "-Dintrospection=disabled", "-Dexamples=disabled",
                      "-Dtests=disabled", "-Ddoc=disabled", "-Dnls=disabled", "-Dtools=disabled", "-Dorc=disabled"),
             pattern="libgstpbutils-1.0.so.0*"),
+    Package("xdg-desktop-portal", ("glibc", "glib", "json-glib", "fuse3", "gdk-pixbuf",
+                                    "gst-plugins-base", "pipewire", "geoclue", "libgudev", "bubblewrap"),
+            kind="data",
+            target_tools={"bwrap": "/usr/bin/bwrap"},
+            options=("-Dflatpak-interfaces=disabled", "-Dsystemd=disabled", "-Ddocumentation=disabled",
+                     "-Dtests=disabled", "-Dinstalled-tests=false", "-Dman-pages=disabled",
+                     "-Dgeoclue=enabled", "-Dgudev=enabled"),
+            pattern="usr/libexec/xdg-desktop-portal"),
+    Package("xdg-desktop-portal-gnome", ("glibc", "glib", "gtk", "libadwaita", "fontconfig",
+                                          "gsettings-desktop-schemas", "gnome-desktop",
+                                          "xdg-desktop-portal"),
+            kind="data",
+            options=("-Dsystemd=disabled",),
+            pattern="usr/libexec/xdg-desktop-portal-gnome"),
     Package("nautilus", ("glibc", "glib", "gtk", "libadwaita", "gnome-desktop", "gnome-autoar", "tinysparql",
                          "gexiv2", "glycin", "libportal", "gst-plugins-base", "icu", "wayland",
                          "gsettings-desktop-schemas"),
@@ -2724,10 +2918,15 @@ def main() -> int:
     locks = lock_data["gnome"]
     for pkg in PACKAGES:
         desktop.VERSIONS.setdefault(pkg.name, pin(lock_data, pkg.name)["version"])
+    desktop.VERSIONS.setdefault("busybox", lock_data["runtime"]["busybox"]["version"])
     # Packages built elsewhere (mozjs and gcc-runtime come from CI): use the newest of each as an input.
     import tarfile
     newest = {}
-    for archive in args.output.glob("*.kiln"):
+    # Only these two inputs are intentionally version-floating. Reading every
+    # package archive here made even an unrelated one-off build depend on every
+    # generated artifact being readable.
+    external_archives = [*args.output.glob("mozjs-*.kiln"), *args.output.glob("gcc-runtime-*.kiln")]
+    for archive in external_archives:
         with tarfile.open(archive) as bundle:
             meta = tomllib.loads(bundle.extractfile("KILN.toml").read().decode())["package"]
         key = [int(x) if x.isdigit() else 0 for x in re.split(r"[.]", meta["version"])]

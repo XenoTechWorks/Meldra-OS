@@ -1,0 +1,9 @@
+window {
+  background: transparent;
+}
+
+box.login-box {
+  padding: 24px;
+  border-radius: 18px;
+  background-color: alpha(@window_bg_color, 0.92);
+}
