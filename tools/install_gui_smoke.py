@@ -14,6 +14,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import meldra_vm  # noqa: E402
@@ -50,6 +51,32 @@ def wait_for_live(timeout: float = 180) -> None:
 
 def screenshot(name: str) -> Path:
     return Path(vm("screenshot", name))
+
+
+def installer_window_drawn(png: Path) -> bool:
+    """Recognize the large neutral GTK window, not merely the colourful desktop."""
+    data = png.read_bytes()
+    position, idat, width, height = 8, b"", 0, 0
+    while position < len(data):
+        length = int.from_bytes(data[position:position + 4], "big")
+        kind = data[position + 4:position + 8]
+        body = data[position + 8:position + 8 + length]
+        if kind == b"IHDR":
+            width = int.from_bytes(body[:4], "big")
+            height = int.from_bytes(body[4:8], "big")
+        elif kind == b"IDAT":
+            idat += body
+        position += 12 + length
+    raw = zlib.decompress(idat)
+    stride = width * 3 + 1
+    neutral = samples = 0
+    for y in range(max(80, height // 8), min(height - 60, height * 7 // 8), 16):
+        for x in range(width // 4, width * 3 // 4, 16):
+            offset = y * stride + 1 + x * 3
+            red, green, blue = raw[offset:offset + 3]
+            samples += 1
+            neutral += min(red, green, blue) > 200 and max(red, green, blue) - min(red, green, blue) < 14
+    return samples > 0 and neutral / samples > 0.35
 
 
 def click(x: int, y: int, pause: float = 1.0) -> None:
@@ -92,15 +119,15 @@ def launch_from_app_grid() -> None:
             # until it finishes the transition. Escape exposes the application.
             meldra_vm.monitor("sendkey esc")
             time.sleep(3)
+            meldra_vm.monitor("sendkey alt-tab")
+            time.sleep(3)
             window_deadline = time.time() + 60
             while time.time() < window_deadline:
                 running = "GUI-RUNNING" in vm(
                     "serial", "pidof meldra-installer-gui >/dev/null && echo GUI-RUNNING", check=False
                 )
                 frame = screenshot("install-gui-window-ready")
-                # A bare GNOME Overview compresses to less than 10 KiB in this
-                # software-rendered image; the light installer window is much larger.
-                if running and frame.stat().st_size > 20_000:
+                if running and installer_window_drawn(frame):
                     return
                 if not running:
                     raise RuntimeError("Install Meldra exited before its window appeared")
