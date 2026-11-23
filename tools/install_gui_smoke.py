@@ -88,7 +88,25 @@ def launch_from_app_grid() -> None:
         ):
             # Give GTK and Mutter time to map the first window on slower TCG runners.
             time.sleep(8)
-            return
+            # GNOME can leave keyboard-launched applications behind the Overview
+            # until it finishes the transition. Escape exposes the application.
+            meldra_vm.monitor("sendkey esc")
+            time.sleep(3)
+            window_deadline = time.time() + 60
+            while time.time() < window_deadline:
+                running = "GUI-RUNNING" in vm(
+                    "serial", "pidof meldra-installer-gui >/dev/null && echo GUI-RUNNING", check=False
+                )
+                frame = screenshot("install-gui-window-ready")
+                # A bare GNOME Overview compresses to less than 10 KiB in this
+                # software-rendered image; the light installer window is much larger.
+                if running and frame.stat().st_size > 20_000:
+                    return
+                if not running:
+                    raise RuntimeError("Install Meldra exited before its window appeared")
+                meldra_vm.monitor("sendkey esc")
+                time.sleep(3)
+            raise RuntimeError("Install Meldra process started but its window did not appear")
         time.sleep(2)
     raise RuntimeError("Install Meldra did not launch from the app grid search")
 
