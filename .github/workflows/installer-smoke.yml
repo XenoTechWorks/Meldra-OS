@@ -14,6 +14,14 @@ on:
         description: SHA-256 digest of the initramfs
         required: true
         type: string
+      kernel_url:
+        description: HTTPS URL of the matching bzImage
+        required: true
+        type: string
+      kernel_sha256:
+        description: SHA-256 digest of the kernel
+        required: true
+        type: string
       case:
         description: Installer matrix to run
         required: true
@@ -59,12 +67,17 @@ jobs:
         env:
           INITRAMFS_URL: ${{ inputs.initramfs_url }}
           INITRAMFS_SHA256: ${{ inputs.initramfs_sha256 }}
+          KERNEL_URL: ${{ inputs.kernel_url }}
+          KERNEL_SHA256: ${{ inputs.kernel_sha256 }}
         run: |
           mkdir -p build
           curl --fail --location --proto '=https' --tlsv1.2 \
             --output build/meldra-gnome-initramfs.cpio.gz "$INITRAMFS_URL"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output build/bzImage "$KERNEL_URL"
           printf '%s  %s\n' "$INITRAMFS_SHA256" build/meldra-gnome-initramfs.cpio.gz | sha256sum --check --strict
-          ls -lh build/meldra-gnome-initramfs.cpio.gz
+          printf '%s  %s\n' "$KERNEL_SHA256" build/bzImage | sha256sum --check --strict
+          ls -lh build/meldra-gnome-initramfs.cpio.gz build/bzImage
 
       - name: Run storage installer matrix
         if: inputs.case == 'all' || inputs.case == 'storage'
