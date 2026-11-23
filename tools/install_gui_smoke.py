@@ -127,8 +127,6 @@ def launch_from_app_grid() -> None:
             # until it finishes the transition. Escape exposes the application.
             meldra_vm.monitor("sendkey esc")
             time.sleep(3)
-            meldra_vm.monitor("sendkey alt-tab")
-            time.sleep(3)
             window_deadline = time.time() + 60
             while time.time() < window_deadline:
                 running = "GUI-RUNNING" in vm(
