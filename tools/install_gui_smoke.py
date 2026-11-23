@@ -108,14 +108,19 @@ def choose_next(x: int, y: int, steps: int) -> None:
 
 
 def launch_from_app_grid() -> None:
-    # Search from GNOME's Overview instead of relying on app-grid coordinates:
-    # hosted runners and local displays do not necessarily choose the same mode.
+    # Use the app grid, scaling the known GNOME layout positions to the actual
+    # framebuffer instead of assuming the local 1440x900 mode.
+    desktop = screenshot("install-gui-desktop-ready")
+    data = desktop.read_bytes()
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
     meldra_vm.monitor("sendkey esc")
     time.sleep(1)
     meldra_vm.monitor("sendkey meta_l")
     time.sleep(2)
-    meldra_vm.type_text("Install Meldra", delay=0.04)
-    meldra_vm.monitor("sendkey ret")
+    click(width // 2, int(height * 0.82), 2)       # Show Applications
+    screenshot("install-gui-app-grid")
+    click(int(width * 0.401), int(height * 0.331), 2)  # Install Meldra
     deadline = time.time() + 30
     while time.time() < deadline:
         if "GUI-RUNNING" in vm(
