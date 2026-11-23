@@ -73,15 +73,24 @@ def choose_next(x: int, y: int, steps: int) -> None:
 
 
 def launch_from_app_grid() -> None:
-    # Escape establishes the desktop state even if GNOME initially opened the Overview.
+    # Search from GNOME's Overview instead of relying on app-grid coordinates:
+    # hosted runners and local displays do not necessarily choose the same mode.
     meldra_vm.monitor("sendkey esc")
     time.sleep(1)
     meldra_vm.monitor("sendkey meta_l")
     time.sleep(2)
-    click(720, 738, 2)   # Show Applications (after Files and Text Editor in the dash)
-    click(578, 298, 4)   # Install Meldra
-    if "GUI-RUNNING" not in vm("serial", "pidof meldra-installer-gui >/dev/null && echo GUI-RUNNING", check=False):
-        raise RuntimeError("Install Meldra did not launch from the app grid")
+    meldra_vm.type_text("Install Meldra", delay=0.04)
+    meldra_vm.monitor("sendkey ret")
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        if "GUI-RUNNING" in vm(
+            "serial", "pidof meldra-installer-gui >/dev/null && echo GUI-RUNNING", check=False
+        ):
+            # Give GTK and Mutter time to map the first window on slower TCG runners.
+            time.sleep(8)
+            return
+        time.sleep(2)
+    raise RuntimeError("Install Meldra did not launch from the app grid search")
 
 
 def drive_installer(evidence: list[str]) -> bool:
