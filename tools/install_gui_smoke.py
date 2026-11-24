@@ -140,7 +140,9 @@ def launch_from_gnome() -> None:
             # until it finishes the transition. Escape exposes the application.
             meldra_vm.monitor("sendkey esc")
             time.sleep(3)
-            window_deadline = time.time() + 60
+            # GitHub's nested VM has no KVM; under TCG, GTK's first software-
+            # rendered frame can take well over a minute after the process is up.
+            window_deadline = time.time() + 240
             while time.time() < window_deadline:
                 running = "GUI-RUNNING" in vm(
                     "serial", "pidof meldra-installer-gui >/dev/null && echo GUI-RUNNING", check=False
