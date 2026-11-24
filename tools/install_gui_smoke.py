@@ -117,9 +117,14 @@ def launch_from_gnome() -> None:
     # remains keyboard/mouse automation against the rendered GTK interface.
     vm(
         "serial",
+        "shell_pid=$(pidof gnome-shell | awk '{print $1}'); "
+        "session_bus=$(tr '\\0' '\\n' </proc/$shell_pid/environ | "
+        "sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p'); "
+        "test -n \"$session_bus\"; "
         "setpriv --reuid=1000 --regid=1000 --init-groups env "
         "HOME=/home/meldra USER=meldra XDG_RUNTIME_DIR=/run/user/1000 "
-        "WAYLAND_DISPLAY=wayland-0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
+        "XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME WAYLAND_DISPLAY=wayland-0 "
+        "DBUS_SESSION_BUS_ADDRESS=\"$session_bus\" "
         "GSK_RENDERER=cairo /usr/bin/meldra-installer-gui "
         ">/tmp/meldra-installer-gui.log 2>&1 &",
     )
