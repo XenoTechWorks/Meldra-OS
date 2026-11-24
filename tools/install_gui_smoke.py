@@ -113,8 +113,10 @@ def launch_from_app_grid() -> None:
     screenshot("install-gui-desktop-ready")
     meldra_vm.monitor("sendkey esc")
     time.sleep(1)
-    meldra_vm.monitor("sendkey meta_l-a")  # Show Applications
+    meldra_vm.monitor("sendkey meta_l-a")  # Enter the GNOME Overview.
     time.sleep(3)
+    screenshot("install-gui-overview")
+    click(720, 738, 3)       # Show Applications
     screenshot("install-gui-app-grid")
     click(578, 298, 2)       # Install Meldra
     deadline = time.time() + 30
