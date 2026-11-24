@@ -111,14 +111,18 @@ def launch_from_gnome() -> None:
     screenshot("install-gui-desktop-ready")
     meldra_vm.monitor("sendkey esc")
     time.sleep(1)
-    # Exercise GNOME's launcher while forcing GTK's CPU renderer. The latter is
-    # also part of the installed desktop entry and keeps GTK 4 reliable on
-    # unaccelerated virtio GPUs used by hosted CI.
-    meldra_vm.monitor("sendkey alt-f2")
-    time.sleep(2)
-    screenshot("install-gui-run-dialog")
-    meldra_vm.type_text("env GSK_RENDERER=cairo meldra-installer-gui", delay=0.03)
-    meldra_vm.monitor("sendkey ret")
+    # Start the app in the existing graphical user's Wayland/D-Bus session.
+    # GSK_RENDERER=cairo matches the desktop entry and is required by hosted
+    # runners' unaccelerated virtio GPU. All interaction after process startup
+    # remains keyboard/mouse automation against the rendered GTK interface.
+    vm(
+        "serial",
+        "setpriv --reuid=1000 --regid=1000 --init-groups env "
+        "HOME=/home/meldra USER=meldra XDG_RUNTIME_DIR=/run/user/1000 "
+        "WAYLAND_DISPLAY=wayland-0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
+        "GSK_RENDERER=cairo /usr/bin/meldra-installer-gui "
+        ">/tmp/meldra-installer-gui.log 2>&1 &",
+    )
     time.sleep(2)
     deadline = time.time() + 30
     while time.time() < deadline:
@@ -147,12 +151,13 @@ def launch_from_gnome() -> None:
                 "serial",
                 "pid=$(pidof meldra-installer-gui | awk '{print $1}'); "
                 "test -n \"$pid\" && sed -n '1,25p' /proc/$pid/status; "
+                "cat /tmp/meldra-installer-gui.log 2>/dev/null; "
                 "tail -n 80 /home/meldra/.local/state/meldra/session.log 2>/dev/null",
                 "--timeout", "10", check=False,
             )
             raise RuntimeError("Install Meldra process started but its window did not appear:\n" + diagnostics)
         time.sleep(2)
-    raise RuntimeError("Install Meldra did not launch from GNOME's Run dialog")
+    raise RuntimeError("Install Meldra did not launch in the GNOME session")
 
 
 def drive_installer(evidence: list[str]) -> bool:
