@@ -107,16 +107,19 @@ def choose_next(x: int, y: int, steps: int) -> None:
     time.sleep(0.5)
 
 
-def launch_from_overview() -> None:
-    # GNOME keeps these controls at the same logical coordinates in the
-    # supported 1280x800 and 1440x900 modes (confirmed by captured frames).
+def launch_from_gnome() -> None:
     screenshot("install-gui-desktop-ready")
     meldra_vm.monitor("sendkey esc")
     time.sleep(1)
-    meldra_vm.monitor("sendkey meta_l-a")  # Enter the GNOME Overview.
-    time.sleep(3)
-    screenshot("install-gui-overview")
-    click(640, 738, 2)       # Install Meldra (pinned in the live-session dock)
+    # Exercise GNOME's launcher while forcing GTK's CPU renderer. The latter is
+    # also part of the installed desktop entry and keeps GTK 4 reliable on
+    # unaccelerated virtio GPUs used by hosted CI.
+    meldra_vm.monitor("sendkey alt-f2")
+    time.sleep(2)
+    screenshot("install-gui-run-dialog")
+    meldra_vm.type_text("env GSK_RENDERER=cairo meldra-installer-gui", delay=0.03)
+    meldra_vm.monitor("sendkey ret")
+    time.sleep(2)
     deadline = time.time() + 30
     while time.time() < deadline:
         if "GUI-RUNNING" in vm(
@@ -149,13 +152,13 @@ def launch_from_overview() -> None:
             )
             raise RuntimeError("Install Meldra process started but its window did not appear:\n" + diagnostics)
         time.sleep(2)
-    raise RuntimeError("Install Meldra did not launch from the GNOME Overview")
+    raise RuntimeError("Install Meldra did not launch from GNOME's Run dialog")
 
 
 def drive_installer(evidence: list[str]) -> bool:
-    launch_from_overview()
+    launch_from_gnome()
     welcome = screenshot("install-gui-welcome")
-    evidence.append(f"installer launched from GNOME Overview: True ({welcome})")
+    evidence.append(f"installer launched through GNOME: True ({welcome})")
 
     click(905, 727, 1.5)  # Welcome: Continue
     click(905, 727, 1.5)  # Disk (the only suitable disk is selected): Continue

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Install Meldra
 Comment=Install Meldra on this computer's disk
-Exec=meldra-installer-gui
+Exec=env GSK_RENDERER=cairo meldra-installer-gui
 Icon=drive-harddisk
 Terminal=false
 Type=Application
