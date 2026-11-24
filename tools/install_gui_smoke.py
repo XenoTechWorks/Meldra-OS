@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
-"""Drive the graphical installer from GNOME's app grid, then boot and log in.
+"""Drive the graphical installer from GNOME's Overview, then boot and log in.
 
 This deliberately launches the application through GNOME rather than a serial
 shell: polkit must see the installer as part of the active local session.
@@ -107,7 +107,7 @@ def choose_next(x: int, y: int, steps: int) -> None:
     time.sleep(0.5)
 
 
-def launch_from_app_grid() -> None:
+def launch_from_overview() -> None:
     # GNOME keeps these controls at the same logical coordinates in the
     # supported 1280x800 and 1440x900 modes (confirmed by captured frames).
     screenshot("install-gui-desktop-ready")
@@ -116,9 +116,7 @@ def launch_from_app_grid() -> None:
     meldra_vm.monitor("sendkey meta_l-a")  # Enter the GNOME Overview.
     time.sleep(3)
     screenshot("install-gui-overview")
-    click(720, 738, 3)       # Show Applications
-    screenshot("install-gui-app-grid")
-    click(578, 298, 2)       # Install Meldra
+    click(640, 738, 2)       # Install Meldra (pinned in the live-session dock)
     deadline = time.time() + 30
     while time.time() < deadline:
         if "GUI-RUNNING" in vm(
@@ -151,13 +149,13 @@ def launch_from_app_grid() -> None:
             )
             raise RuntimeError("Install Meldra process started but its window did not appear:\n" + diagnostics)
         time.sleep(2)
-    raise RuntimeError("Install Meldra did not launch from the app grid search")
+    raise RuntimeError("Install Meldra did not launch from the GNOME Overview")
 
 
 def drive_installer(evidence: list[str]) -> bool:
-    launch_from_app_grid()
+    launch_from_overview()
     welcome = screenshot("install-gui-welcome")
-    evidence.append(f"installer launched from GNOME app grid: True ({welcome})")
+    evidence.append(f"installer launched from GNOME Overview: True ({welcome})")
 
     click(905, 727, 1.5)  # Welcome: Continue
     click(905, 727, 1.5)  # Disk (the only suitable disk is selected): Continue
