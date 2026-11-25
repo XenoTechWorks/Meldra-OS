@@ -92,8 +92,15 @@ def main() -> int:
     for path in sorted(stage.rglob("*")):
         if path.is_file() and not path.is_symlink() and path.stat().st_size < 64 << 20:
             data = path.read_bytes()
-            if str(work).encode() in data:
-                raise RuntimeError(f"build path baked into {path.relative_to(stage)}")
+            # DESTDIR (stage) must never leak; the source and object trees are not installed anywhere.
+            for leaked in (str(top), str(obj), str(stage)):
+                if leaked.encode() in data:
+                    if path.name == "llvm-config":
+                        # It records its configure-time source/object roots for `--src-root`/`--obj-root`;
+                        # every path it prints for linking is computed from where the binary sits.
+                        print(f"note: llvm-config records build root {leaked} (informational only)")
+                        continue
+                    raise RuntimeError(f"build path {leaked} baked into {path.relative_to(stage)}")
 
     runtime_version, _ = package_gcc_runtime(args.output, work)
     build(manifest(stage, "llvm", version, ("glibc", "gcc-runtime")), args.output / f"llvm-{version}.kiln")

@@ -137,6 +137,8 @@ def meson_data_build(pkg: Package, lock: dict, cache: Path, work: Path, output: 
         desktop.cross_file = target_tool_wrappers(pkg)(desktop.cross_file)
     if pkg.rust:
         desktop.cross_file = rust_cross_file(desktop.cross_file)
+    if "llvm" in pkg.deps:
+        desktop.cross_file = llvm_cross_file(desktop.cross_file)
     if pkg.introspect:
         desktop.cross_file = introspection_cross_file(desktop.cross_file)
     try:
@@ -2165,13 +2167,16 @@ PACKAGES = [
     ),
     Package(
         "mesa", ("glibc", "libdrm", "libffi", "expat", "wayland", "wayland-protocols", "zlib", "elfutils",
-                 "vulkan-loader", "vulkan-headers", "gcc-runtime"),
-        options=("-Dplatforms=wayland", "-Dgallium-drivers=softpipe,virgl,radeonsi,zink,nouveau",
-                 # Intel (iris, anv) needs mesa-clc, i.e. LLVM and clang at build time: a later step.
-                 "-Dvulkan-drivers=amd,virtio", "-Dglx=disabled", "-Degl=enabled", "-Dgbm=enabled",
+                 "vulkan-loader", "vulkan-headers", "gcc-runtime", "llvm"),
+        # llvmpipe (fast software OpenGL/GLES, for VMs and unsupported GPUs) and lavapipe ("swrast", software
+        # Vulkan) use the CI-built LLVM; softpipe stays as the last resort.
+        options=("-Dplatforms=wayland",
+                 "-Dgallium-drivers=llvmpipe,softpipe,virgl,radeonsi,zink,nouveau",
+                 # Intel (iris, anv) also needs mesa-clc (clang, libclc, SPIR-V tools): a later step.
+                 "-Dvulkan-drivers=amd,virtio,swrast", "-Dglx=disabled", "-Degl=enabled", "-Dgbm=enabled",
                  "-Dgles1=disabled", "-Dgles2=enabled", "-Dopengl=true", "-Dglvnd=disabled",
-                 # No LLVM: AMD shaders compile with Mesa's own ACO.
-                 "-Dllvm=disabled", "-Dshared-llvm=disabled", "-Damd-use-llvm=false", "-Ddraw-use-llvm=false",
+                 # AMD shaders still compile with Mesa's own ACO, not LLVM.
+                 "-Dllvm=enabled", "-Dshared-llvm=enabled", "-Damd-use-llvm=false", "-Ddraw-use-llvm=true",
                  "-Dlibunwind=disabled", "-Dzstd=disabled", "-Dshader-cache=enabled", "-Dvalgrind=disabled",
                  "-Dbuild-tests=false", "-Dgallium-va=disabled", "-Dvideo-codecs=[]", "-Dintel-rt=disabled",
                  "-Dgallium-rusticl=false", "-Dteflon=false", "-Dmicrosoft-clc=disabled", "-Dvulkan-layers=[]",
@@ -2821,6 +2826,21 @@ def build_host_wayland(lock: dict, cache: Path, work: Path) -> None:
 
 
 RUST_TARGET = "x86_64-unknown-linux-gnu"
+
+
+def llvm_cross_file(original):
+    """Wrap a cross file for packages built against the sysroot's LLVM (Mesa). The llvm package is built natively
+    in CI against an older glibc, so its llvm-config runs here and reports the sysroot's own paths (it derives
+    them from its location)."""
+    def make(work: Path, sysroot: Path) -> Path:
+        path = original(work, sysroot)
+        llvm_config = sysroot.resolve() / "usr/bin/llvm-config"
+        if not llvm_config.is_file():
+            raise RuntimeError("the sysroot has no llvm-config (is the llvm package from CI in build/packages?)")
+        text = path.read_text().replace("[binaries]\n", f"[binaries]\nllvm-config = '{llvm_config}'\n", 1)
+        path.write_text(text)
+        return path
+    return make
 
 
 def rust_cross_file(original):
