@@ -1276,3 +1276,52 @@ version = "2.4"
 url = "https://gitlab.freedesktop.org/xdg/shared-mime-info/-/archive/2.4/shared-mime-info-2.4.tar.gz"
 sha256 = "531291d0387eb94e16e775d7e73788d06d2b2fdd8cd2ac6b6b15287593b6a2de"
 role = "the freedesktop MIME database (file types for Files, thumbnails, Open With); sha512 matches Alpine's APKBUILD"
+
+# Screen reader stack (Orca): Python runtime, bindings, speech synthesis.
+[gnome.python]
+version = "3.13.18"
+url = "https://www.python.org/ftp/python/3.13.18/Python-3.13.18.tar.xz"
+sha256 = "abb0102e6d4ae027509bcb82327d9dd85515b44a3ba8ad538cfc5e9847029f68"
+
+[gnome.pycairo]
+version = "1.29.2"
+url = "https://github.com/pygobject/pycairo/releases/download/v1.29.2/pycairo-1.29.2.tar.gz"
+sha256 = "3e69fff74fe64f5ba2dfa31f67c6bdf26413342574047437d2ac520d35e9a489"
+
+[gnome.pygobject]
+version = "3.58.1"
+url = "https://download.gnome.org/sources/pygobject/3.58/pygobject-3.58.1.tar.gz"
+sha256 = "4c80598ade17fbaa7798e01a25d0bf29ce109740786026a074c5c62bb3e79d23"
+
+[gnome.pyatspi]
+version = "2.58.2"
+url = "https://download.gnome.org/sources/pyatspi/2.58/pyatspi-2.58.2.tar.xz"
+sha256 = "24590e5b60fec8dfb59fcd27d2a90de7034060be318ca3f7770e0f984f1f94e2"
+
+[gnome.espeak_ng]
+version = "1.52.0"
+url = "https://github.com/espeak-ng/espeak-ng/archive/refs/tags/1.52.0.tar.gz"
+file = "espeak-ng-1.52.0.tar.gz"
+sha256 = "bb4338102ff3b49a81423da8a1a158b420124b055b60fa76cfb4b18677130a23"
+
+[gnome.dotconf]
+version = "1.4.1"
+url = "https://github.com/williamh/dotconf/archive/refs/tags/v1.4.1.tar.gz"
+file = "dotconf-1.4.1.tar.gz"
+sha256 = "5922c46cacf99b2ecc4853d28a2bda4a489292e73276e604bd9cba29dfca892d"
+
+[gnome.speech_dispatcher]
+version = "0.12.1"
+url = "https://github.com/brailcom/speechd/releases/download/0.12.1/speech-dispatcher-0.12.1.tar.gz"
+sha256 = "b14a5238d287d2dcce4dd42bbd66ca65fa228e7e683708267f7b34036f7ba4b4"
+
+[gnome.orca]
+version = "50.3"
+url = "https://download.gnome.org/sources/orca/50/orca-50.3.tar.xz"
+sha256 = "cc13521037519e06125ec6eb0236ffd52a6d6ff7ef538323f786fca840a3dbda"
+
+[gnome.dasbus]
+version = "1.7"
+url = "https://files.pythonhosted.org/packages/e1/b4/4d55b9359bc34d56b29b943b378331dd8aaea6db6d0543e5d97fed4b1af7/dasbus-1.7-py3-none-any.whl"
+sha256 = "0a9433e9e72c2c865fa2d5ef824ac4ef49b540cf57f6396e515c2f314e5c14cd"
+role = "pure-Python D-Bus library Orca 50 requires for its remote-controller interface"

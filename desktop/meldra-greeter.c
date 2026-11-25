@@ -23,6 +23,7 @@
 
 typedef struct {
     GtkWidget *window, *user, *password, *message, *button;
+    GtkWidget *avatar, *initials, *name, *user_row, *not_listed, *clock;
 } Greeter;
 
 static int greetd_connect(void) {
@@ -194,10 +195,12 @@ static void submit(GtkWidget *widget, gpointer data) {
     const char *user = gtk_editable_get_text(GTK_EDITABLE(greeter->user));
     if (!*user) {
         show(greeter, "Enter your user name.");
+        gtk_widget_grab_focus(greeter->user);
         return;
     }
     show(greeter, "");
     gtk_widget_set_sensitive(greeter->button, FALSE);
+    gtk_widget_set_sensitive(greeter->password, FALSE);
     char *password = g_strdup(gtk_editable_get_text(GTK_EDITABLE(greeter->password)));
     gboolean ok = log_in(greeter, user, password);
     explicit_bzero(password, strlen(password));
@@ -208,6 +211,8 @@ static void submit(GtkWidget *widget, gpointer data) {
         return;
     }
     gtk_widget_set_sensitive(greeter->button, TRUE);
+    gtk_widget_set_sensitive(greeter->password, TRUE);
+    gtk_widget_add_css_class(greeter->password, "error");
     gtk_widget_grab_focus(greeter->password);
 }
 
@@ -218,28 +223,145 @@ static void power(GtkButton *button, gpointer data) {
 }
 
 // The first ordinary account (uid 1000-59999) is offered by default.
-static char *default_user(void) {
+static struct passwd *default_account(void) {
     struct passwd *entry;
-    char *found = NULL;
     setpwent();
-    while ((entry = getpwent())) {
-        if (entry->pw_uid >= 1000 && entry->pw_uid < 60000) {
-            found = g_strdup(entry->pw_name);
-            break;
-        }
-    }
+    while ((entry = getpwent()))
+        if (entry->pw_uid >= 1000 && entry->pw_uid < 60000) break;
     endpwent();
-    return found;
+    return entry;
 }
 
+// "Ada Lovelace" -> "AL", "meldra" -> "M".
+static char *initials_of(const char *name) {
+    GString *out = g_string_new(NULL);
+    gboolean word_start = TRUE;
+    for (const char *p = name; *p && out->len < 8; p = g_utf8_next_char(p)) {
+        gunichar c = g_utf8_get_char(p);
+        if (g_unichar_isspace(c)) {
+            word_start = TRUE;
+        } else if (word_start) {
+            g_string_append_unichar(out, g_unichar_toupper(c));
+            word_start = FALSE;
+        }
+    }
+    char *result = g_utf8_substring(out->str, 0, MIN(2, g_utf8_strlen(out->str, -1)));
+    g_string_free(out, TRUE);
+    return result;
+}
+
+// Shows the account picture (AccountsService icon) or coloured initials, and the full name, for `user`.
+static void show_account(Greeter *greeter, const char *user) {
+    struct passwd *entry = user && *user ? getpwnam(user) : NULL;
+    char *real = NULL;
+    if (entry && entry->pw_gecos && *entry->pw_gecos) real = g_strndup(entry->pw_gecos, strcspn(entry->pw_gecos, ","));
+    const char *shown = real && *real ? real : (user && *user ? user : "");
+    gtk_label_set_text(GTK_LABEL(greeter->name), shown);
+    char *icon = user && *user ? g_build_filename("/var/lib/AccountsService/icons", user, NULL) : NULL;
+    if (icon && g_file_test(icon, G_FILE_TEST_IS_REGULAR)) {
+        gtk_picture_set_filename(GTK_PICTURE(greeter->avatar), icon);
+        gtk_widget_set_visible(greeter->avatar, TRUE);
+        gtk_widget_set_visible(greeter->initials, FALSE);
+    } else {
+        char *letters = initials_of(*shown ? shown : "?");
+        gtk_label_set_text(GTK_LABEL(greeter->initials), letters);
+        g_free(letters);
+        // A stable colour per user, from the Adwaita palette.
+        static const char *const colours[] = {"avatar-blue", "avatar-teal", "avatar-green", "avatar-yellow",
+                                              "avatar-orange", "avatar-red", "avatar-purple"};
+        for (size_t i = 0; i < G_N_ELEMENTS(colours); i++) gtk_widget_remove_css_class(greeter->initials, colours[i]);
+        gtk_widget_add_css_class(greeter->initials, colours[g_str_hash(*shown ? shown : "?") % G_N_ELEMENTS(colours)]);
+        gtk_widget_set_visible(greeter->avatar, FALSE);
+        gtk_widget_set_visible(greeter->initials, TRUE);
+    }
+    g_free(icon);
+    g_free(real);
+}
+
+static void user_changed(GtkEditable *editable, gpointer data) {
+    show_account(data, gtk_editable_get_text(editable));
+}
+
+static void password_changed(GtkEditable *editable, gpointer data) {
+    (void)editable;
+    gtk_widget_remove_css_class(((Greeter *)data)->password, "error");
+}
+
+// "Not listed?": type another user name.
+static void choose_user(GtkButton *button, gpointer data) {
+    (void)button;
+    Greeter *greeter = data;
+    gtk_widget_set_visible(greeter->user_row, TRUE);
+    gtk_widget_set_visible(greeter->not_listed, FALSE);
+    gtk_editable_set_text(GTK_EDITABLE(greeter->user), "");
+    show(greeter, "");
+    gtk_widget_grab_focus(greeter->user);
+}
+
+static gboolean tick(gpointer data) {
+    Greeter *greeter = data;
+    GDateTime *now = g_date_time_new_now_local();
+    char *text = g_date_time_format(now, "%a %b %-d  %H:%M");
+    gtk_label_set_text(GTK_LABEL(greeter->clock), text);
+    g_free(text);
+    g_date_time_unref(now);
+    return G_SOURCE_CONTINUE;
+}
+
+// GNOME's default wallpaper (dark variant), the same picture the desktop starts with.
+#define BACKGROUND "/usr/share/backgrounds/gnome/adwaita-d.jxl"
+
 static const char *STYLE =
-    "window { background: linear-gradient(160deg, #1d2333, #303a5a); }"
-    ".card { background: alpha(#ffffff, 0.08); border-radius: 18px; padding: 36px; }"
-    ".brand { color: white; font-size: 30px; font-weight: 800; }"
-    ".hint { color: alpha(white, 0.7); }"
-    ".message { color: #ffb4a9; }"
-    "entry { min-width: 280px; min-height: 40px; }"
-    "button.login { min-height: 40px; }";
+    "window { background-color: #1d1d20; }"
+    // Top bar, as in GNOME Shell.
+    ".topbar { background-color: alpha(black, 0.55); min-height: 30px; padding: 0 8px; }"
+    ".topbar label { color: white; font-weight: bold; font-size: 11pt; }"
+    ".topbar .brand { font-weight: 800; letter-spacing: 1px; }"
+    ".topbar menubutton > button { color: white; min-height: 26px; padding: 0 8px; border-radius: 99px; }"
+    ".topbar menubutton > button:hover { background-color: alpha(white, 0.15); }"
+    ".dim { background-color: alpha(black, 0.35); }"
+    // The account and password column.
+    ".avatar { border-radius: 9999px; }"
+    ".initials { border-radius: 9999px; min-width: 128px; min-height: 128px; font-size: 44pt; font-weight: 800;"
+    "  color: white; }"
+    ".avatar-blue { background-color: #3584e4; } .avatar-teal { background-color: #2190a4; }"
+    ".avatar-green { background-color: #3a944a; } .avatar-yellow { background-color: #c88800; }"
+    ".avatar-orange { background-color: #ed5b00; } .avatar-red { background-color: #e62d42; }"
+    ".avatar-purple { background-color: #9141ac; }"
+    ".account-name { color: white; font-size: 20pt; font-weight: 800; }"
+    "entry.login-entry { min-width: 280px; min-height: 40px; border-radius: 99px; padding: 0 16px;"
+    "  background-color: alpha(white, 0.12); color: white; }"
+    "entry.login-entry.error { outline: 2px solid #ff7b63; }"
+    "button.go { min-width: 40px; min-height: 40px; padding: 0; border-radius: 99px; }"
+    ".message { color: #ffb4a9; font-weight: bold; }"
+    "button.link-button { color: alpha(white, 0.75); }"
+    "button.link-button:hover { color: white; }";
+
+static GtkWidget *power_menu(void) {
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    const struct { const char *label, *icon, *action; } items[] = {
+        {"Restart…", "system-reboot-symbolic", "reboot"},
+        {"Power Off…", "system-shutdown-symbolic", "poweroff"},
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(items); i++) {
+        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+        gtk_box_append(GTK_BOX(row), gtk_image_new_from_icon_name(items[i].icon));
+        gtk_box_append(GTK_BOX(row), gtk_label_new(items[i].label));
+        GtkWidget *button = gtk_button_new();
+        gtk_button_set_child(GTK_BUTTON(button), row);
+        gtk_widget_add_css_class(button, "flat");
+        g_signal_connect(button, "clicked", G_CALLBACK(power), (gpointer)items[i].action);
+        gtk_box_append(GTK_BOX(box), button);
+    }
+    GtkWidget *popover = gtk_popover_new();
+    gtk_popover_set_child(GTK_POPOVER(popover), box);
+    GtkWidget *button = gtk_menu_button_new();
+    gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(button), "system-shutdown-symbolic");
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+    gtk_widget_set_tooltip_text(button, "Power");
+    gtk_accessible_update_property(GTK_ACCESSIBLE(button), GTK_ACCESSIBLE_PROPERTY_LABEL, "Power", -1);
+    return button;
+}
 
 static void activate(GtkApplication *app, gpointer data) {
     Greeter *greeter = data;
@@ -253,59 +375,112 @@ static void activate(GtkApplication *app, gpointer data) {
     gtk_window_set_title(GTK_WINDOW(greeter->window), "Meldra login");
     gtk_window_set_decorated(GTK_WINDOW(greeter->window), FALSE);
 
-    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    gtk_widget_add_css_class(card, "card");
-    gtk_widget_set_halign(card, GTK_ALIGN_CENTER);
-    gtk_widget_set_valign(card, GTK_ALIGN_CENTER);
+    // Background: the wallpaper, dimmed so the white text stays readable (a plain dark fill if it is missing).
+    GtkWidget *overlay = gtk_overlay_new();
+    if (g_file_test(BACKGROUND, G_FILE_TEST_IS_REGULAR)) {
+        GtkWidget *wallpaper = gtk_picture_new_for_filename(BACKGROUND);
+        gtk_picture_set_content_fit(GTK_PICTURE(wallpaper), GTK_CONTENT_FIT_COVER);
+        gtk_overlay_set_child(GTK_OVERLAY(overlay), wallpaper);
+    } else {
+        gtk_overlay_set_child(GTK_OVERLAY(overlay), gtk_box_new(GTK_ORIENTATION_VERTICAL, 0));
+    }
+    GtkWidget *layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_add_css_class(layout, "dim");
+    gtk_overlay_add_overlay(GTK_OVERLAY(overlay), layout);
 
+    // Top bar: name, clock, power menu.
+    GtkWidget *bar = gtk_center_box_new();
+    gtk_widget_add_css_class(bar, "topbar");
     GtkWidget *brand = gtk_label_new("Meldra");
     gtk_widget_add_css_class(brand, "brand");
-    GtkWidget *hint = gtk_label_new("Sign in to continue");
-    gtk_widget_add_css_class(hint, "hint");
+    greeter->clock = gtk_label_new("");
+    gtk_center_box_set_start_widget(GTK_CENTER_BOX(bar), brand);
+    gtk_center_box_set_center_widget(GTK_CENTER_BOX(bar), greeter->clock);
+    gtk_center_box_set_end_widget(GTK_CENTER_BOX(bar), power_menu());
+    gtk_box_append(GTK_BOX(layout), bar);
+    tick(greeter);
+    g_timeout_add_seconds(1, tick, greeter);
+
+    // Centre column: picture, name, (user name), password, message, "Not listed?".
+    GtkWidget *column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+    gtk_widget_set_halign(column, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(column, GTK_ALIGN_CENTER);
+    gtk_widget_set_vexpand(column, TRUE);
+
+    greeter->avatar = gtk_picture_new();
+    gtk_picture_set_content_fit(GTK_PICTURE(greeter->avatar), GTK_CONTENT_FIT_COVER);
+    gtk_widget_set_size_request(greeter->avatar, 128, 128);
+    gtk_widget_set_halign(greeter->avatar, GTK_ALIGN_CENTER);
+    gtk_widget_set_overflow(greeter->avatar, GTK_OVERFLOW_HIDDEN);
+    gtk_widget_add_css_class(greeter->avatar, "avatar");
+    greeter->initials = gtk_label_new("");
+    gtk_widget_set_halign(greeter->initials, GTK_ALIGN_CENTER);
+    gtk_widget_add_css_class(greeter->initials, "initials");
+    greeter->name = gtk_label_new("");
+    gtk_widget_add_css_class(greeter->name, "account-name");
 
     greeter->user = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(greeter->user), "User name");
-    char *user = default_user();
-    if (user) gtk_editable_set_text(GTK_EDITABLE(greeter->user), user);
-    g_free(user);
+    gtk_widget_add_css_class(greeter->user, "login-entry");
+    greeter->user_row = greeter->user;
+
     greeter->password = gtk_password_entry_new();
     gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(greeter->password), TRUE);
     g_object_set(greeter->password, "placeholder-text", "Password", NULL);
-    greeter->button = gtk_button_new_with_label("Log in");
+    gtk_widget_add_css_class(greeter->password, "login-entry");
+    gtk_widget_set_hexpand(greeter->password, TRUE);
+    greeter->button = gtk_button_new_from_icon_name("go-next-symbolic");
     gtk_widget_add_css_class(greeter->button, "suggested-action");
-    gtk_widget_add_css_class(greeter->button, "login");
+    gtk_widget_add_css_class(greeter->button, "go");
+    gtk_widget_set_tooltip_text(greeter->button, "Log In");
+    gtk_accessible_update_property(GTK_ACCESSIBLE(greeter->button), GTK_ACCESSIBLE_PROPERTY_LABEL, "Log In", -1);
+    GtkWidget *password_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(password_row), greeter->password);
+    gtk_box_append(GTK_BOX(password_row), greeter->button);
+
     greeter->message = gtk_label_new("");
     gtk_widget_add_css_class(greeter->message, "message");
     gtk_label_set_wrap(GTK_LABEL(greeter->message), TRUE);
+    gtk_label_set_max_width_chars(GTK_LABEL(greeter->message), 40);
+    gtk_label_set_justify(GTK_LABEL(greeter->message), GTK_JUSTIFY_CENTER);
+    gtk_accessible_update_property(GTK_ACCESSIBLE(greeter->message), GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                   "Login message", -1);
 
-    GtkWidget *powers = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_set_halign(powers, GTK_ALIGN_CENTER);
-    GtkWidget *restart = gtk_button_new_with_label("Restart");
-    GtkWidget *off = gtk_button_new_with_label("Power off");
-    gtk_widget_add_css_class(restart, "flat");
-    gtk_widget_add_css_class(off, "flat");
-    gtk_box_append(GTK_BOX(powers), restart);
-    gtk_box_append(GTK_BOX(powers), off);
+    greeter->not_listed = gtk_button_new_with_label("Not listed?");
+    gtk_widget_add_css_class(greeter->not_listed, "link-button");
+    gtk_widget_add_css_class(greeter->not_listed, "flat");
+    gtk_widget_set_halign(greeter->not_listed, GTK_ALIGN_CENTER);
 
-    gtk_box_append(GTK_BOX(card), brand);
-    gtk_box_append(GTK_BOX(card), hint);
-    gtk_box_append(GTK_BOX(card), greeter->user);
-    gtk_box_append(GTK_BOX(card), greeter->password);
-    gtk_box_append(GTK_BOX(card), greeter->button);
-    gtk_box_append(GTK_BOX(card), greeter->message);
-    gtk_box_append(GTK_BOX(card), powers);
-    gtk_window_set_child(GTK_WINDOW(greeter->window), card);
+    gtk_box_append(GTK_BOX(column), greeter->avatar);
+    gtk_box_append(GTK_BOX(column), greeter->initials);
+    gtk_box_append(GTK_BOX(column), greeter->name);
+    gtk_box_append(GTK_BOX(column), greeter->user);
+    gtk_box_append(GTK_BOX(column), password_row);
+    gtk_box_append(GTK_BOX(column), greeter->message);
+    gtk_box_append(GTK_BOX(column), greeter->not_listed);
+    gtk_box_append(GTK_BOX(layout), column);
+    gtk_window_set_child(GTK_WINDOW(greeter->window), overlay);
 
+    struct passwd *account = default_account();
+    if (account) {
+        gtk_editable_set_text(GTK_EDITABLE(greeter->user), account->pw_name);
+        gtk_widget_set_visible(greeter->user, FALSE);   // shown by "Not listed?"
+    } else {
+        gtk_widget_set_visible(greeter->not_listed, FALSE);
+    }
+    show_account(greeter, gtk_editable_get_text(GTK_EDITABLE(greeter->user)));
+
+    g_signal_connect(greeter->user, "changed", G_CALLBACK(user_changed), greeter);
+    g_signal_connect(greeter->password, "changed", G_CALLBACK(password_changed), greeter);
     g_signal_connect(greeter->user, "activate", G_CALLBACK(submit), greeter);
     g_signal_connect(greeter->password, "activate", G_CALLBACK(submit), greeter);
     g_signal_connect(greeter->button, "clicked", G_CALLBACK(submit), greeter);
-    g_signal_connect(restart, "clicked", G_CALLBACK(power), "reboot");
-    g_signal_connect(off, "clicked", G_CALLBACK(power), "poweroff");
+    g_signal_connect(greeter->not_listed, "clicked", G_CALLBACK(choose_user), greeter);
 
     // No gtk_window_fullscreen(): cage already shows every window fullscreen, and asking before the first frame
     // trips an assertion in cage 0.2.1 (wlr_xdg_surface_schedule_configure on an uninitialised surface).
     gtk_window_present(GTK_WINDOW(greeter->window));
-    gtk_widget_grab_focus(gtk_editable_get_text(GTK_EDITABLE(greeter->user))[0] ? greeter->password : greeter->user);
+    gtk_widget_grab_focus(account ? greeter->password : greeter->user);
 }
 
 int main(int argc, char **argv) {

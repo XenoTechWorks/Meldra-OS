@@ -34,8 +34,10 @@ ROOTS = (
     "gsettings-desktop-schemas", "gcc-runtime", "glycin", "gi-typelibs", "accountsservice", "gdm", "dconf",
     "librsvg", "upower", "geoclue", "geocode-glib", "libgweather", "ibus", "gnome-settings-daemon",
     "bubblewrap", "adwaita-icon-theme", "hicolor-icon-theme", "foot", "rtkit", "meldra-desktop-apps",
-    "linux", "linux-modules", "meldra-installer", "meldra-greeter", "regreet", "efibootmgr",
+    "linux", "linux-modules", "meldra-installer", "meldra-greeter", "efibootmgr",
     "meldra-crypt-initramfs",
+    # Screen reader (Super+Alt+S, or Settings > Accessibility): Orca, speech-dispatcher, espeak-ng.
+    "orca",
     # A real shell for the terminal: bash and the GNU/procps tools (busybox remains /bin/sh for system scripts).
     "bash", "coreutils", "grep", "sed", "findutils", "gawk", "diffutils", "less", "procps-ng", "fastfetch",
     # Drivers and firmware (modules load through eudev + kmod), GPU acceleration, Wi-Fi, audio.
@@ -176,6 +178,17 @@ def main() -> int:
             print(install(archive, root))
     except RuntimeError as error:
         parser.error(str(error))
+
+    # /var/run is /run (FHS). Programs still use the old path: zbus (ReGreet) connects to the system bus at
+    # /var/run/dbus/system_bus_socket, and ReGreet crashed at startup without this link.
+    var_run = root / "var/run"
+    if var_run.is_dir() and not var_run.is_symlink():
+        if any(var_run.iterdir()):
+            raise RuntimeError(f"packages installed files into /var/run: {sorted(var_run.iterdir())}")
+        var_run.rmdir()
+    if not var_run.is_symlink():
+        var_run.parent.mkdir(parents=True, exist_ok=True)
+        var_run.symlink_to("../run")
 
     polkit_helper = root / "usr/lib/polkit-1/polkit-agent-helper-1"
     if polkit_helper.stat().st_mode & 0o7777 != 0o4755:

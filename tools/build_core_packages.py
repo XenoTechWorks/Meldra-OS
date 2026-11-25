@@ -86,19 +86,6 @@ def build_busybox(binary: Path, work: Path, output: Path) -> None:
     build(source, output / "busybox-1.36.1.kiln")
 
 
-def build_wallpapers(work: Path, output: Path) -> None:
-    source = work / "meldra-wallpapers"
-    target = source / "root/usr/share/backgrounds/meldra"
-    target.mkdir(parents=True)
-    for wallpaper in sorted(Path("assets/wallpapers").glob("*.png")):
-        shutil.copy2(wallpaper, target / wallpaper.name)
-    write_manifest(
-        source / "KILN.toml", "meldra-wallpapers", "0.1.0",
-        "Official Meldra OS desktop wallpapers"
-    )
-    build(source, output / "meldra-wallpapers-0.1.0.kiln")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hearth", required=True, type=Path)
@@ -110,7 +97,6 @@ def main() -> int:
         work = Path(directory)
         build_hearth(args.hearth, work, args.output)
         build_kiln(work, args.output)
-        build_wallpapers(work, args.output)
         if args.busybox:
             if not args.busybox.is_file():
                 parser.error(f"BusyBox not found: {args.busybox}")

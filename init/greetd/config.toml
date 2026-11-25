@@ -1,9 +1,10 @@
-# greetd: Meldra's login manager. ReGreet runs fullscreen in the cage kiosk
-# compositor as the unprivileged "greeter" user; after a successful login greetd starts the user's GNOME session.
+# greetd: Meldra's login manager. The login screen (meldra-greeter, desktop/meldra-greeter.c) runs fullscreen in
+# the cage kiosk compositor as the unprivileged "greeter" user; after a successful login greetd starts the user's
+# GNOME session.
 [terminal]
 vt = 1
 
 [default_session]
-# Keep the greeter independent of user portals. It gets a private session bus for GTK and AccountsService.
-command = "/bin/env WLR_RENDERER=pixman GSK_RENDERER=cairo GTK_USE_PORTAL=0 GDK_DEBUG=no-portals /usr/bin/cage -s -m last -d -- /usr/bin/dbus-run-session /usr/bin/regreet"
+# Keep the greeter independent of user portals. It gets a private session bus for GTK.
+command = "/bin/env WLR_RENDERER=pixman GSK_RENDERER=cairo GTK_USE_PORTAL=0 GDK_DEBUG=no-portals /usr/bin/cage -s -m last -d -- /usr/bin/dbus-run-session /usr/libexec/meldra/meldra-greeter"
 user = "greeter"

@@ -35,6 +35,10 @@ OWNED = {"meldra-session": "0.1.0", "meldra-backgrounds": "0.1.0", "meldra-deskt
          "gi-typelibs": "1.86.0"}   # built from this repository, so there is no upstream pin
 
 
+# Python series Meldra ships (and cross-builds with the build machine's python of the same series).
+PYTHON_ABI = "3.13"
+
+
 def pin(lock_data: dict, name: str) -> dict:
     """A package's pin: the gnome section first, then the older desktop section."""
     if name in OWNED:
@@ -195,7 +199,9 @@ def cross_autotools_build(pkg: Package, lock: dict, cache: Path, work: Path, out
            "PKG_CONFIG_SYSROOT_DIR": str(root),
            "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig",
            # msgfmt finds ITS rules (polkit's, AppStream's) in GETTEXTDATADIRS; they come with the sysroot's packages.
-           "GETTEXTDATADIRS": f"{root}/usr/share/gettext", **pkg.env}
+           "GETTEXTDATADIRS": f"{root}/usr/share/gettext",
+           # Package env values may name the sysroot as {root}.
+           **{key: value.replace("{root}", str(root)) for key, value in pkg.env.items()}}
     subprocess.run([str(upstream / "configure"), "--build=x86_64-pc-linux-gnu", "--host=x86_64-unknown-linux-gnu",
                     "--prefix=/usr", *pkg.options], cwd=build_dir, env=env, check=True)
     subprocess.run(["make", f"-j{os.environ.get('MELDRA_JOBS', '2')}"], cwd=build_dir, env=env, check=True)
@@ -1249,41 +1255,20 @@ def keyutils_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Pa
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
-MELDRA_WALLPAPERS = (
-    # file stem, display name, light/dark
-    ("meldra-flow-v2", "Meldra Flow"), ("meldra-mark", "Meldra Mark"), ("meldra-mark-light", "Meldra Mark Light"),
-    ("meldra-confluence", "Meldra Confluence"), ("meldra-mosaic-v2", "Meldra Mosaic"),
-    ("meldra-tidelight-v2", "Meldra Tidelight"),
-)
-
-
 def meldra_backgrounds_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
-    """Meldra's wallpapers, listed for Settings' Appearance page, and the default background (Flow for the
-    light style, Mark for dark) as a GSettings schema override."""
+    """Meldra's default background, as a GSettings schema override: GNOME's own Adwaita wallpaper (light and dark
+    variants, from gnome-backgrounds). Meldra ships no artwork of its own here."""
     del cache
     stage = work / pkg.name / "package/root"
-    pictures = stage / "usr/share/backgrounds/meldra"
-    properties = stage / "usr/share/gnome-background-properties"
     schemas = stage / "usr/share/glib-2.0/schemas"
-    for directory in (pictures, properties, schemas):
-        directory.mkdir(parents=True)
-    entries = []
-    for stem, name in MELDRA_WALLPAPERS:
-        shutil.copy2(Path("assets/wallpapers") / f"{stem}.png", pictures / f"{stem}.png")
-        entries.append(f"  <wallpaper deleted=\"false\">\n    <name>{name}</name>\n"
-                       f"    <filename>/usr/share/backgrounds/meldra/{stem}.png</filename>\n"
-                       "    <options>zoom</options>\n    <shade_type>solid</shade_type>\n"
-                       "    <pcolor>#2e3a5c</pcolor>\n    <scolor>#2e3a5c</scolor>\n  </wallpaper>\n")
-    (properties / "meldra-backgrounds.xml").write_text(
-        '<?xml version="1.0"?>\n<!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">\n<wallpapers>\n'
-        + "".join(entries) + "</wallpapers>\n")
+    schemas.mkdir(parents=True)
     (schemas / "50_meldra-backgrounds.gschema.override").write_text(
         "[org.gnome.desktop.background]\n"
-        "picture-uri='file:///usr/share/backgrounds/meldra/meldra-flow-v2.png'\n"
-        "picture-uri-dark='file:///usr/share/backgrounds/meldra/meldra-mark.png'\n"
+        "picture-uri='file:///usr/share/backgrounds/gnome/adwaita-l.jxl'\n"
+        "picture-uri-dark='file:///usr/share/backgrounds/gnome/adwaita-d.jxl'\n"
         "picture-options='zoom'\n\n"
         "[org.gnome.desktop.screensaver]\n"
-        "picture-uri='file:///usr/share/backgrounds/meldra/meldra-mark.png'\n")
+        "picture-uri='file:///usr/share/backgrounds/gnome/adwaita-d.jxl'\n")
     build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
 
 
@@ -1504,6 +1489,197 @@ def rtkit_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path)
 
 PRINTERS_WHY = "The Printers panel needs Samba's libsmbclient (to browse Windows printers); Meldra has no Samba and no print server yet, so the panel is left out until printing lands."
 
+
+# --- Screen reader stack (Orca) -------------------------------------------------------------------------------
+
+
+
+def target_python_wrapper(work: Path, root: Path) -> Path:
+    """python3 from the target sysroot, run through the target loader (the build machine's glibc is older).
+
+    Meson asks it for the install paths and extension suffix, so they come from Meldra's own Python."""
+    directory = work / "target-python"
+    directory.mkdir(exist_ok=True)
+    wrapper = directory / "python3"
+    wrapper.write_text(
+        f'#!/bin/sh\nexport PYTHONHOME="{root}/usr" PYTHONDONTWRITEBYTECODE=1\n'
+        f'exec "{root}/lib64/ld-linux-x86-64.so.2" --library-path "{root}/lib64:{root}/usr/lib64:{root}/usr/lib" '
+        f'"{root}/usr/bin/python{PYTHON_ABI}" "$@"\n')
+    wrapper.chmod(0o755)
+    return wrapper
+
+
+def python_meson_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path, check: str,
+                       fix=None) -> None:
+    """A Meson package that installs into Meldra's Python: the cross file's python is the target interpreter.
+
+    `check` is a path under the stage root that must exist afterwards."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    cross = desktop.cross_file(unit, sysroot)
+    python = target_python_wrapper(unit, root)
+    text = cross.read_text().replace("[binaries]\n", f"[binaries]\npython = '{python}'\npython3 = '{python}'\n", 1)
+    cross.write_text(text)
+    build_dir, stage = unit / "build", unit / "package/root"
+    env = {**os.environ, "GI_TYPELIB_PATH": f"{root}/usr/lib/girepository-1.0"}
+    subprocess.run([*desktop.MESON, "setup", "--wrap-mode=nodownload", str(build_dir), str(upstream),
+                    "--prefix=/usr", "--libdir=lib", "--cross-file", str(cross), *pkg.options], env=env, check=True)
+    subprocess.run([*desktop.MESON, "compile", "-C", str(build_dir)], env=env, check=True)
+    subprocess.run([*desktop.MESON, "install", "-C", str(build_dir), "--destdir", str(stage)], env=env, check=True)
+    # Meson writes the build-time interpreter (the wrapper above) into installed scripts' #! lines.
+    for script in sorted((stage / "usr/bin").glob("*")) if (stage / "usr/bin").is_dir() else ():
+        if script.is_file() and not script.is_symlink():
+            data = script.read_bytes()
+            if data.startswith(b"#!") and str(python).encode() in data.split(b"\n", 1)[0]:
+                script.write_bytes(b"#!/usr/bin/python3" + data[data.index(b"\n"):])
+    for path in sorted(stage.rglob("*")):
+        if path.is_file() and not path.is_symlink() and str(unit).encode() in path.read_bytes():
+            raise RuntimeError(f"{pkg.name}: build path baked into {path.relative_to(stage)}")
+    if fix:
+        fix(stage)
+    if not (stage / check).exists():
+        raise RuntimeError(f"{pkg.name}: expected file not installed: {check}")
+    for path in sorted(stage.rglob("*.so")):
+        if path.is_file() and not path.is_symlink():
+            require_glibc_elf(path)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def python_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """CPython, cross-compiled; the build machine's python3 (same 3.13 series) runs the build-time scripts."""
+    build_python = shutil.which(f"python{PYTHON_ABI}") or sys.executable
+    version = subprocess.run([build_python, "-c", "import sys; print('%d.%d' % sys.version_info[:2])"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+    if version != PYTHON_ABI:
+        raise RuntimeError(f"cross-building Python {PYTHON_ABI} needs a build-machine python{PYTHON_ABI}, "
+                           f"found {version}")
+    pkg.options = (f"--with-build-python={build_python}", *pkg.options)
+    cross_autotools_build(pkg, lock, cache, work, output)
+
+
+def python_post(stage: Path, upstream: Path, build_dir: Path) -> None:
+    del upstream, build_dir
+    lib = stage / f"usr/lib/python{PYTHON_ABI}"
+    # The test suite and IDLE/turtle demos are a third of the install and are never run on Meldra.
+    for name in ("test", "idlelib", "turtledemo", "tkinter", "ensurepip", "lib2to3"):
+        shutil.rmtree(lib / name, ignore_errors=True)
+    for config in lib.glob("config-*"):
+        for archive in config.glob("*.a"):
+            archive.unlink()
+    for cache_dir in sorted(lib.rglob("__pycache__"), reverse=True):
+        for compiled in cache_dir.glob("*.opt-*.pyc"):
+            compiled.unlink()
+    bin_dir = stage / "usr/bin"
+    if not (bin_dir / "python").exists():
+        (bin_dir / "python").symlink_to("python3")
+
+
+def espeak_ng_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """espeak-ng: voice and dictionary data compiled by a native build (the target binary needs glibc 2.44 and
+    cannot run here), then the library and program cross-compiled against the sysroot."""
+    unit = work / pkg.name
+    unit.mkdir()
+    upstream = source(lock, cache, unit / "source")
+    subprocess.run(["./autogen.sh"], cwd=upstream, check=True)
+    native = unit / "native"
+    shutil.copytree(upstream, native, symlinks=True)
+    jobs = os.environ.get("MELDRA_JOBS", "2")
+    native_options = ("--disable-static", "--with-speechplayer=no", "--with-mbrola=no", "--with-sonic=no",
+                      "--with-pcaudiolib=no", "--with-klatt=no")
+    subprocess.run(["./configure", "--prefix=/usr", *native_options], cwd=native, check=True)
+    subprocess.run(["make", f"-j{jobs}"], cwd=native, check=True)   # builds espeak-ng-data with the native binary
+    sysroot = desktop.make_sysroot(output, unit, pkg.deps)
+    root = sysroot.resolve()
+    cross = unit / "cross"
+    shutil.copytree(upstream, cross, symlinks=True)
+    env = {**os.environ, "CC": f"gcc --sysroot={root}", "CXX": f"g++ --sysroot={root}", "CFLAGS": "-O2 -pipe",
+           "CXXFLAGS": "-O2 -pipe", "LDFLAGS": f"-Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64",
+           "PKG_CONFIG_SYSROOT_DIR": str(root),
+           "PKG_CONFIG_LIBDIR": f"{root}/usr/lib/pkgconfig:{root}/usr/share/pkgconfig"}
+    subprocess.run(["./configure", "--build=x86_64-pc-linux-gnu", "--host=x86_64-unknown-linux-gnu",
+                    "--prefix=/usr", *pkg.options], cwd=cross, env=env, check=True)
+    subprocess.run(["make", f"-j{jobs}", "src/libespeak-ng.la", "src/espeak-ng"], cwd=cross, env=env, check=True)
+    stage = unit / "package/root"
+    for target in ("install-libLTLIBRARIES", "install-binPROGRAMS", "install-pkgconfigDATA",
+                   "install-espeak_includeHEADERS", "install-espeak_ng_includeHEADERS"):
+        subprocess.run(["make", target, f"DESTDIR={stage}"], cwd=cross, env=env, check=True)
+    (stage / "usr/bin/speak-ng").unlink(missing_ok=True)   # the C++ demo front end; espeak-ng is the program
+    data = stage / "usr/share/espeak-ng-data"
+    shutil.copytree(native / "espeak-ng-data", data, symlinks=True,
+                    ignore=shutil.ignore_patterns("*.o", "Makefile*"))
+    for required in ("usr/bin/espeak-ng", "usr/share/espeak-ng-data/phontab",
+                     "usr/share/espeak-ng-data/en_dict", "usr/include/espeak-ng/speak_lib.h"):
+        if not (stage / required).exists():
+            raise RuntimeError(f"espeak-ng: expected file not installed: {required}")
+    if not (stage / "usr/bin/espeak").exists():
+        (stage / "usr/bin/espeak").symlink_to("espeak-ng")
+    require_glibc_elf(stage / "usr/bin/espeak-ng")
+    library = next((stage / "usr/lib").glob("libespeak-ng.so.1.*"))
+    require_glibc_elf(library)
+    build(manifest(stage, pkg.name, lock["version"], pkg.deps), output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def pycairo_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    python_meson_build(pkg, lock, cache, work, output, f"usr/lib/python{PYTHON_ABI}/site-packages/cairo/__init__.py")
+
+
+def pygobject_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    python_meson_build(pkg, lock, cache, work, output, f"usr/lib/python{PYTHON_ABI}/site-packages/gi/__init__.py")
+
+
+def pyatspi_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    python_meson_build(pkg, lock, cache, work, output,
+                       f"usr/lib/python{PYTHON_ABI}/site-packages/pyatspi/__init__.py")
+
+
+def dasbus_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    """dasbus: pure Python, installed from its (hash-pinned, py3-none-any) wheel."""
+    unit = work / pkg.name
+    unit.mkdir()
+    unpacked = python_wheel(lock, cache, unit)
+    site = unit / f"package/root/usr/lib/python{PYTHON_ABI}/site-packages"
+    site.mkdir(parents=True)
+    for entry in unpacked.iterdir():
+        shutil.copytree(entry, site / entry.name) if entry.is_dir() else shutil.copy2(entry, site / entry.name)
+    if not (site / "dasbus/__init__.py").is_file():
+        raise RuntimeError("dasbus: package not unpacked")
+    build(manifest(unit / "package/root", pkg.name, lock["version"], pkg.deps),
+          output / f"{pkg.name}-{lock['version']}.kiln")
+
+
+def orca_lazy_annotations(stage: Path) -> None:
+    """Orca 50's sound.py annotates methods with Gst types even when GStreamer's typelib is missing (Meldra builds
+    GStreamer without introspection), so importing it fails with NameError and Orca never starts. Lazy annotations
+    (PEP 563) keep the annotations as strings; nothing else in the module changes."""
+    sound = stage / f"usr/lib/python{PYTHON_ABI}/site-packages/orca/sound.py"
+    lines = sound.read_text(encoding="utf-8").splitlines(keepends=True)
+    if any(line.startswith("from __future__ import annotations") for line in lines):
+        return
+    first_import = next(i for i, line in enumerate(lines) if line.startswith(("import ", "from ")))
+    lines.insert(first_import, "from __future__ import annotations\n\n")
+    sound.write_text("".join(lines), encoding="utf-8")
+    for stale in sound.parent.glob("__pycache__/sound.*.pyc"):
+        stale.unlink()
+
+
+def orca_build(pkg: Package, lock: dict, cache: Path, work: Path, output: Path) -> None:
+    python_meson_build(pkg, lock, cache, work, output, "usr/bin/orca", fix=orca_lazy_annotations)
+
+
+def speech_dispatcher_post(stage: Path, upstream: Path, build_dir: Path) -> None:
+    """Speak through espeak-ng and PulseAudio (pipewire-pulse) by default."""
+    del upstream, build_dir
+    config = stage / "etc/speech-dispatcher/speechd.conf"
+    text = config.read_text()
+    text = re.sub(r'^#?\s*DefaultModule\s+\S+', 'DefaultModule espeak-ng', text, count=1, flags=re.M)
+    text = re.sub(r'^#?\s*AudioOutputMethod\s+.*$', 'AudioOutputMethod "pulse"', text, count=1, flags=re.M)
+    config.write_text(text)
+
+
+
 PACKAGES = [
     Package(
         "glib", ("glibc", "libffi", "pcre2", "zlib"), introspect=True,
@@ -1565,7 +1741,11 @@ PACKAGES = [
     Package(
         "at-spi2-core", ("glibc", "glib", "libffi", "pcre2", "zlib", "dbus", "expat", "libxml2"), introspect=True,
         options=("-Dx11=disabled", "-Dintrospection=enabled", "-Ddocs=false", "-Dsystemd_user_dir=/usr/lib/systemd/user",
-                 "-Duse_systemd=false"),
+                 "-Duse_systemd=false",
+                 # The accessibility bus launcher otherwise looks for dbus-daemon on the build machine at configure
+                 # time, finds none in the sandbox, and is left with only dbus-broker (which Meldra does not ship):
+                 # it then never starts the bus and every AT-SPI client, Orca included, times out.
+                 "-Ddbus_daemon=/usr/bin/dbus-daemon", "-Ddefault_bus=dbus-daemon"),
         pattern="libatspi.so.0.*",
     ),
     Package(
@@ -2208,7 +2388,7 @@ PACKAGES = [
                      "-DJPEGXL_ENABLE_OPENEXR=OFF", "-DJPEGXL_ENABLE_PLUGINS=OFF", "-DJPEGXL_ENABLE_JNI=OFF",
                      "-DJPEGXL_BUNDLE_LIBPNG=OFF", "-DJPEGXL_ENABLE_TRANSCODE_JPEG=ON", "-DBUILD_TESTING=OFF"),
             pattern="libjxl.so.0*"),
-    Package("meldra-backgrounds", (), kind="custom"),
+    Package("meldra-backgrounds", ("gnome-backgrounds",), kind="custom"),
     Package("shared-mime-info", ("glibc", "glib", "libxml2", "gcc-runtime"), kind="data",
             # The database is compiled when the image is assembled (update-mime-database), with every
             # package's definitions present.
@@ -2555,6 +2735,43 @@ PACKAGES = [
                  "-Ddbussystemservicedir=/usr/share/dbus-1/system-services", "-Dudevrulesdir=/usr/lib/udev/rules.d"),
         pattern="libelogind.so.0.*",
     ),
+    # Screen reader: Orca speaks through speech-dispatcher and espeak-ng, and reads apps through AT-SPI.
+    Package(
+        "python", ("glibc", "zlib", "libffi", "expat", "sqlite", "xz", "openssl", "readline", "ncurses",
+                   "libxcrypt", "util-linux"), kind="custom",
+        options=("--enable-shared", "--without-ensurepip", "--with-system-expat", "--disable-test-modules",
+                 "--with-lto=no", "--disable-optimizations", "ac_cv_file__dev_ptmx=yes", "ac_cv_file__dev_ptc=no",
+                 "ac_cv_buggy_getaddrinfo=no"),
+        pattern=f"usr/bin/python{PYTHON_ABI}", post=python_post,
+    ),
+    Package("pycairo", ("glibc", "python", "cairo"), kind="custom", options=("-Dtests=false",)),
+    Package("pygobject", ("glibc", "python", "pycairo", "glib", "libffi", "cairo", "gi-typelibs"), kind="custom",
+            options=("-Dtests=false", "-Dpycairo=enabled")),
+    Package("pyatspi", ("glibc", "glib", "libffi", "pcre2", "zlib", "python", "pygobject", "at-spi2-core"), kind="custom"),
+    Package("espeak-ng", ("glibc", "gcc-runtime"), kind="custom",
+            options=("--disable-static", "--with-speechplayer=no", "--with-mbrola=no", "--with-sonic=no",
+                     "--with-pcaudiolib=no", "--with-klatt=no")),
+    Package("dotconf", ("glibc",), kind="cross-autotools", options=("--disable-static",),
+            pattern="usr/lib/libdotconf.so.0"),
+    Package(
+        "speech-dispatcher", ("glibc", "glib", "libffi", "pcre2", "zlib", "dotconf", "libsndfile", "pulseaudio", "espeak-ng", "python",
+                              "libltdl"),
+        kind="cross-autotools",
+        options=("--disable-static", "--with-espeak-ng", "--without-espeak", "--without-flite", "--without-ibmtts",
+                 "--without-voxin", "--without-ivona", "--without-pico", "--without-baratinoo", "--without-kali",
+                 "--without-libao", "--without-alsa", "--without-oss", "--without-nas", "--with-pulse",
+                 "--without-systemdsystemunitdir", "--disable-doc", "--sysconfdir=/etc",
+                 f"--with-pythondir=/usr/lib/python{PYTHON_ABI}/site-packages",
+                 # help2man would run the freshly built (target) daemons to write man pages.
+                 "ac_cv_prog_HELP2MAN="),
+        # src/modules/Makefile.am resets LDFLAGS, so the sysroot's library paths ride on CC.
+        env={"PYTHON": f"python{PYTHON_ABI}",
+             "CC": "gcc --sysroot={root} -Wl,-rpath-link,{root}/usr/lib -Wl,-rpath-link,{root}/lib64"},
+        pattern="usr/bin/speech-dispatcher", post=speech_dispatcher_post,
+    ),
+    Package("dasbus", ("python", "pygobject"), kind="custom"),
+    Package("orca", ("glibc", "glib", "libffi", "pcre2", "zlib", "python", "pygobject", "pyatspi", "dasbus", "gtk3", "speech-dispatcher", "at-spi2-core",
+                     "gsettings-desktop-schemas"), kind="custom"),
 ]
 
 
@@ -3035,6 +3252,7 @@ def main() -> int:
         print(f"build_gnome_platform: {error}", file=sys.stderr)
         return 1
     return 0
+
 
 
 def pinned_meson(lock: dict, cache: Path, work: Path) -> tuple[str, ...]:

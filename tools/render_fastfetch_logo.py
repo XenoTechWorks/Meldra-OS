@@ -5,7 +5,7 @@ as truecolor half-block art for fastfetch (`"type": "file-raw"`).
 
     render_fastfetch_logo.py [--radius 13] [--output assets/fastfetch/meldra-logo.ansi] [--plain]
 
-Geometry follows assets/wallpapers/meldra-mark.png. Each terminal cell holds two
+The mark is drawn from the geometry below. Each terminal cell holds two
 square sub-pixels (upper and lower half block), so the ring stays round.
 """
 from __future__ import annotations

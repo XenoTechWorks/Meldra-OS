@@ -10,7 +10,7 @@ experimental artwork remains optional at `/usr/share/backgrounds/meldra/`.
 
 ## GNOME (default)
 
-GNOME is the integrated desktop: GNOME Shell and Mutter, ReGreet/greetd,
+GNOME is the integrated desktop: GNOME Shell and Mutter, meldra-greeter/greetd,
 settings, NetworkManager, BlueZ, PipeWire/WirePlumber, AT-SPI, portals, polkit,
 power management, and AccountsService. Login, audio, networking, portals, and
 software rendering work in a VM; suspend/resume now has a QEMU smoke path.
@@ -34,7 +34,7 @@ when GNOME or GPU acceleration is unavailable.
 2. D-Bus, seat/session management, polkit, PipeWire, and portals.
 3. Labwc smoke session to validate the platform beneath GNOME.
 4. Mutter and GNOME Shell under software rendering.
-5. ReGreet login, complete GNOME session, and hardware acceleration.
+5. Graphical login (meldra-greeter), complete GNOME session, and hardware acceleration.
 6. Accessibility, input methods, Bluetooth, color management, screen sharing, and suspend.
 
 `repository.toml` is the dependency intent and recipe-status catalog. Run

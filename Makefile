@@ -1,4 +1,4 @@
-.PHONY: all check test audit sources kernel-config kernel glibc init packages graphics-packages desktop-libs fonts xkeyboard-config labwc gnome-backgrounds gnome-classics rootfs desktop-rootfs desktop-initramfs desktop-preview gnome-iso gnome-power-smoke install-smoke install-storage-smoke install-gui-smoke installer-smoke initramfs boot-smoke labwc-plan gnome-plan status clean
+.PHONY: all check test audit sources kernel-config kernel glibc init packages graphics-packages desktop-libs fonts xkeyboard-config labwc gnome-backgrounds gnome-classics rootfs desktop-rootfs desktop-initramfs desktop-preview gnome-iso gnome-power-smoke orca-smoke install-smoke install-storage-smoke install-gui-smoke installer-smoke initramfs boot-smoke labwc-plan gnome-plan status clean
 
 BUSYBOX ?= build/host-src/busybox-1.36.1/busybox
 
@@ -79,6 +79,9 @@ gnome-iso: build/bzImage build/meldra-gnome-initramfs.cpio.gz
 
 gnome-power-smoke:
 	python3 tools/power_smoke.py
+
+orca-smoke:
+	python3 tools/orca_smoke.py
 
 install-smoke:
 	python3 tools/install_smoke.py

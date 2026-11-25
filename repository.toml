@@ -36,21 +36,15 @@ dependencies = ["python"]
 
 [[package]]
 name = "python"
-version = "3.13"
-status = "planned"
-dependencies = []
+version = "3.13.18"
+status = "built"
+dependencies = ["glibc", "zlib", "libffi", "expat", "sqlite", "xz", "openssl", "readline", "ncurses", "libxcrypt", "util-linux"]
 
 [[package]]
 name = "meldra-base"
 version = "0.1.0"
 status = "planned"
 dependencies = ["linux-meldra", "glibc", "hearth", "kiln"]
-
-[[package]]
-name = "meldra-wallpapers"
-version = "0.1.0"
-status = "built"
-dependencies = []
 
 [[package]]
 name = "gnome-backgrounds"
@@ -1292,10 +1286,59 @@ dependencies = ["glibc", "brotli", "highway", "lcms2", "gcc-runtime"]
 name = "meldra-backgrounds"
 version = "0.1.0"
 status = "built"
-dependencies = []
+dependencies = ["gnome-backgrounds"]
 
 [[package]]
 name = "shared-mime-info"
 version = "2.4"
 status = "built"
 dependencies = ["glibc", "glib", "libxml2", "gcc-runtime"]
+
+# Screen reader stack (M1), built by tools/build_gnome_platform.py.
+[[package]]
+name = "pycairo"
+version = "1.29.2"
+status = "built"
+dependencies = ["glibc", "python", "cairo"]
+
+[[package]]
+name = "pygobject"
+version = "3.58.1"
+status = "built"
+dependencies = ["glibc", "python", "pycairo", "glib", "libffi", "cairo", "gi-typelibs"]
+
+[[package]]
+name = "pyatspi"
+version = "2.58.2"
+status = "built"
+dependencies = ["glibc", "python", "pygobject", "at-spi2-core"]
+
+[[package]]
+name = "espeak-ng"
+version = "1.52.0"
+status = "built"
+dependencies = ["glibc", "gcc-runtime"]
+
+[[package]]
+name = "dotconf"
+version = "1.4.1"
+status = "built"
+dependencies = ["glibc"]
+
+[[package]]
+name = "speech-dispatcher"
+version = "0.12.1"
+status = "built"
+dependencies = ["glibc", "glib", "libffi", "pcre2", "zlib", "dotconf", "libsndfile", "pulseaudio", "espeak-ng", "python", "libltdl"]
+
+[[package]]
+name = "dasbus"
+version = "1.7"
+status = "built"
+dependencies = ["python", "pygobject"]
+
+[[package]]
+name = "orca"
+version = "50.3"
+status = "built"
+dependencies = ["glibc", "python", "pygobject", "pyatspi", "dasbus", "gtk3", "speech-dispatcher", "at-spi2-core", "gsettings-desktop-schemas"]

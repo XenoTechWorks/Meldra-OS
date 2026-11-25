@@ -79,7 +79,8 @@ Working, checked in QEMU:
   through an emulated Intel HDA card was recorded with real signal.
 - **Bluetooth:** BlueZ 5.88 and GNOME's Bluetooth panel are integrated, with common USB/UART controller drivers;
   pairing on physical adapters still needs hardware coverage.
-- **Accessibility and power:** AT-SPI is active for GTK/GNOME applications. elogind power off, reboot, and an
+- **Accessibility and power:** AT-SPI is active for GTK/GNOME applications, and the Orca screen reader (with
+  speech-dispatcher and espeak-ng) starts from Settings or Super+Alt+S; `make orca-smoke` checks that it speaks. elogind power off, reboot, and an
   ACPI suspend/resume cycle are covered by the QEMU power smoke test.
 - polkit, UPower, AccountsService, GeoClue, and RealtimeKit.
 
@@ -103,7 +104,8 @@ off; encrypted systems ask for their disk password in Meldra's early userspace.
   <img src="docs/screenshots/meldra-installer.png" width="720" alt="The Install Meldra window asking for a user name, password and computer name">
 </p>
 
-Installed systems start at ReGreet: greetd runs it in the cage kiosk compositor and starts GNOME after a
+Installed systems start at the Meldra login screen (`desktop/meldra-greeter.c`, GTK 4): greetd runs it in the
+cage kiosk compositor and starts GNOME after a
 successful login. (GDM is not used: since GNOME 49 it needs systemd, which Meldra does not use.)
 The live image still logs in automatically.
 
@@ -139,7 +141,7 @@ artifacts.
 | Window manager | Running | Labwc 0.9.1 on virtio-vga in QEMU |
 | Desktop assets | Packaged | Current GNOME backgrounds plus Aqua, Curves, and Sunset |
 | GNOME desktop | Usable preview | Shell 50.6, Settings, Console, Files, Text Editor, NetworkManager, PipeWire, desktop portals |
-| Install and login | Working in QEMU | Installer (UEFI, ext4, optional LUKS2/alongside), ReGreet, persistent home |
+| Install and login | Working in QEMU | Installer (UEFI, ext4, optional LUKS2/alongside), login screen, persistent home |
 
 Meldra is an installable developer preview, not yet a daily-driver OS. Broader
 hardware testing, recovery, signed updates, and security/release engineering
@@ -225,7 +227,8 @@ the installed image is needed for debugging; reports remain in `build/reports/` 
 
 Hearth is Meldra's compact PID 1 and service supervisor. It mounts the early
 filesystems, launches declarative services, reaps child processes, respawns
-long-running services, and performs orderly shutdown.
+long-running services, prints `[  OK  ]` / `[ WARN ]` / `[FAILED]` status lines
+for each one on every console during boot, and performs orderly shutdown.
 
 ### Kiln
 
@@ -244,7 +247,6 @@ init/                           Hearth and service definitions
 kiln/                           Kiln package manager
 desktop/labwc/                  Meldra Labwc session configuration
 profiles/                       base, Labwc, and GNOME installation profiles
-assets/wallpapers/              experimental Meldra artwork
 docs/                           architecture, boot, desktop, security, roadmap
 scripts/                        QEMU smoke and graphical preview launchers
 tools/                          reproducible build and assembly pipelines

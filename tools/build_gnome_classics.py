@@ -81,7 +81,7 @@ def main() -> int:
                 "</wallpapers>\n",
                 encoding="utf-8",
             )
-            # The default background is Meldra's own (meldra-backgrounds); these are offered in Settings only.
+            # The default background is GNOME's Adwaita (set by meldra-backgrounds); these are offered in Settings only.
             (package / "KILN.toml").write_text(
                 "[package]\nname = \"gnome-classic-favorites\"\nversion = \"1.0.0\"\n"
                 "architecture = \"any\"\ndependencies = [\"gnome-backgrounds\"]\n",
