@@ -1,2 +1,3 @@
+description=Hostname
 command=/bin/hostname -F /etc/hostname
 respawn=no

@@ -1,2 +1,3 @@
+description=Login screen (greetd)
 command=/bin/mkdir -p /var/lib/greeter /var/lib/regreet /var/log/regreet && /bin/chown greeter:greeter /var/lib/greeter /var/lib/regreet /var/log/regreet && /bin/chmod 700 /var/lib/greeter /var/lib/regreet /var/log/regreet; until /usr/bin/loginctl list-seats >/dev/null 2>&1; do /bin/sleep 0.3; done; exec /usr/sbin/greetd --config /etc/greetd/config.toml
 respawn=yes

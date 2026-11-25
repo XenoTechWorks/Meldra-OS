@@ -1,2 +1,3 @@
+description=Pseudo-terminal filesystem (/dev/pts)
 command=/bin/mkdir -p /dev/pts && /bin/mount -t devpts -o gid=5,mode=0620,ptmxmode=0666 devpts /dev/pts
 respawn=no

@@ -1,3 +1,4 @@
 # A root shell on the first serial port, for debugging the preview image.
+description=Debug shell on serial port
 command=/bin/sh -c 'exec /bin/sh </dev/ttyS0 >/dev/ttyS0 2>&1'
 respawn=yes

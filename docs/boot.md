@@ -26,6 +26,25 @@ Successful boot reaches a serial login prompt and prints:
 Meldra OS userspace is alive
 ```
 
+## Boot status lines
+
+Hearth prints a status line for every service on each active console (both the
+screen and the serial port, read from `/sys/class/tty/console/active`):
+
+```text
+[  OK  ] Started D-Bus System Message Bus
+[  OK  ] Finished Hostname
+[ WARN ] Network Manager stopped (exit code 1); restarting
+[FAILED] Failed to start Login screen (greetd) (exit code 1); retrying
+```
+
+Respawning services count as started once they have stayed up for two seconds;
+one-shot services report when they exit. After five rapid failures Hearth stops
+restarting a service. A service file may set `description=` for the text shown;
+otherwise the file name without its numeric prefix is used. Colour is off when
+`NO_COLOR` is set or `TERM=dumb`. Kernel messages still print first, as before.
+Hearth's detailed `hearth: start …` lines remain on stderr for the smoke tests.
+
 The tiny initramfs deliberately excludes Kiln and Python. Kiln belongs in the
 persistent base root filesystem built during the next image stage.
 

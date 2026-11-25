@@ -1,2 +1,3 @@
+description=Login prompt on tty1
 command=/bin/getty 115200 tty1 linux
 respawn=yes

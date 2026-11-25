@@ -1,2 +1,3 @@
+description=Coldplug all devices
 command=while ! /usr/bin/udevadm control --ping; do /bin/sleep 0.1; done; /usr/bin/udevadm trigger --action=add; /usr/bin/udevadm settle
 respawn=no

@@ -73,7 +73,7 @@ def install_meldra_session(stage: Path) -> None:
     service = stage / "etc/meldra/services/30-labwc.service"
     service.parent.mkdir(parents=True, exist_ok=True)
     service.write_text(
-        "command=/usr/bin/meldra-labwc-session\nrespawn=yes\n",
+        "description=Labwc desktop session\ncommand=/usr/bin/meldra-labwc-session\nrespawn=yes\n",
         encoding="utf-8",
     )
 

@@ -1,2 +1,3 @@
+description=Login and seat manager (elogind)
 command=while [ ! -S /run/dbus/system_bus_socket ] || [ ! -e /sys/fs/cgroup/cgroup.controllers ]; do /bin/sleep 0.2; done; exec /usr/libexec/elogind
 respawn=yes

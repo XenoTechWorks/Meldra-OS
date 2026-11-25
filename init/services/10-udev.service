@@ -1,2 +1,3 @@
+description=Device manager (udevd)
 command=/usr/sbin/udevd
 respawn=yes
