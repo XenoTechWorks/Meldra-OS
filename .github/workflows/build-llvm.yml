@@ -1,9 +1,15 @@
 name: Build LLVM
 
 # LLVM and clang are far too heavy for the maintainer's fanless machine, so CI builds them (like mozjs).
-# Mesa uses them for llvmpipe (software OpenGL), lavapipe and, later, Intel's drivers. Manual only.
+# Mesa uses them for llvmpipe (software OpenGL), lavapipe and, later, Intel's drivers. Manual, or when the LLVM
+# build itself changes on the m1 branch (manual dispatch needs the workflow on the default branch first).
 on:
   workflow_dispatch:
+  push:
+    branches: [m1]
+    paths:
+      - .github/workflows/build-llvm.yml
+      - tools/build_llvm.py
 
 permissions:
   contents: read
