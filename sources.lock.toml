@@ -1325,3 +1325,10 @@ version = "1.7"
 url = "https://files.pythonhosted.org/packages/e1/b4/4d55b9359bc34d56b29b943b378331dd8aaea6db6d0543e5d97fed4b1af7/dasbus-1.7-py3-none-any.whl"
 sha256 = "0a9433e9e72c2c865fa2d5ef824ac4ef49b540cf57f6396e515c2f314e5c14cd"
 role = "pure-Python D-Bus library Orca 50 requires for its remote-controller interface"
+
+# Built in CI (tools/build_llvm.py, .github/workflows/build-llvm.yml): Mesa's llvmpipe/lavapipe, Intel later.
+[gnome.llvm]
+version = "22.1.8"
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/llvm-project-22.1.8.src.tar.xz"
+sha256 = "922f1817a0df7b1489272d18134ee0087a8b068828f87ac63b9861b1a9965888"
+role = "LLVM and clang for Mesa (llvmpipe software OpenGL, lavapipe, and later Intel iris/ANV)"

@@ -1,0 +1,79 @@
+name: Build LLVM
+
+# LLVM and clang are far too heavy for the maintainer's fanless machine, so CI builds them (like mozjs).
+# Mesa uses them for llvmpipe (software OpenGL), lavapipe and, later, Intel's drivers. Manual only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  llvm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    steps:
+      # Actions are pinned to full commit hashes (the tag in the comment is what was resolved).
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        run: |
+          # The llvm-project source is ~2 GB extracted and a Release build tree with clang ~20 GB.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo mkdir -p /mnt/meldra
+          sudo chown "$USER" /mnt/meldra
+          df -h / /mnt
+
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build python3
+          echo "gcc:    $(gcc --version | head -1)"
+          echo "cmake:  $(cmake --version | head -1)"
+          echo "ninja:  $(ninja --version)"
+          echo "glibc:  $(ldd --version | head -1)"
+          nproc; free -h
+
+      - name: Build LLVM, clang and gcc-runtime
+        run: |
+          mkdir -p out logs
+          set -o pipefail
+          python3 tools/build_llvm.py \
+            --jobs "$(nproc)" \
+            --work /mnt/meldra/work \
+            --cache /mnt/meldra/downloads \
+            --output "$GITHUB_WORKSPACE/out" 2>&1 | tee logs/build-llvm.log
+          sha256sum out/*.kiln | tee out/SHA256SUMS
+
+      # Uploaded before the audit: a long build must not be thrown away because a check failed.
+      - name: Upload packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: meldra-llvm
+          path: |
+            out/*.kiln
+            out/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Audit the packages
+        run: |
+          python3 tools/audit_needed.py out/*.kiln
+          mkdir -p inspect
+          tar -xf out/llvm-*.kiln -C inspect
+          ls -la inspect/root/usr/lib | head -40
+          library=$(find inspect -name 'libLLVM.so*' -type f | head -1)
+          readelf -d "$library" | grep -E 'SONAME|NEEDED|RPATH|RUNPATH'
+          inspect/root/usr/bin/llvm-config --version --targets-built --shared-mode
+
+      - name: Upload the build log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: llvm-build-log
+          path: logs/
+          if-no-files-found: ignore
+          retention-days: 14

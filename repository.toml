@@ -1342,3 +1342,10 @@ name = "orca"
 version = "50.3"
 status = "built"
 dependencies = ["glibc", "python", "pygobject", "pyatspi", "dasbus", "gtk3", "speech-dispatcher", "at-spi2-core", "gsettings-desktop-schemas"]
+
+# Built in CI by .github/workflows/build-llvm.yml (tools/build_llvm.py); Mesa's llvmpipe and lavapipe use it.
+[[package]]
+name = "llvm"
+version = "22.1.8"
+status = "planned"
+dependencies = ["glibc", "gcc-runtime"]
